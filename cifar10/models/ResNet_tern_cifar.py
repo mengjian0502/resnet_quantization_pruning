@@ -374,6 +374,8 @@ class ResNetBasicblock(nn.Module):
     self.bn_b = nn.BatchNorm2d(planes)
 
     self.relu1 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
+    self.relu2 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
+
     self.downsample = downsample
 
   def forward(self, x):
@@ -382,7 +384,7 @@ class ResNetBasicblock(nn.Module):
     basicblock = self.conv_a(x)
     basicblock = self.bn_a(basicblock)
     # basicblock = F.relu(basicblock, inplace=True)
-    basicblock = self.relu(basicblock)
+    basicblock = self.relu1(basicblock)
 
     basicblock = self.conv_b(basicblock)
     basicblock = self.bn_b(basicblock)
@@ -390,7 +392,7 @@ class ResNetBasicblock(nn.Module):
     if self.downsample is not None:
       residual = self.downsample(x)
     
-    return F.relu(residual + basicblock, inplace=True)
+    return self.relu2(residual + basicblock)
 
 
 class CifarResNet(nn.Module):

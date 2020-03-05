@@ -12,7 +12,7 @@ if [ ! -d "$DIRECTORY" ]; then
 fi
 
 ############ Configurations ###############
-model=preresnet20
+model=tern_resnet20
 dataset=cifar10
 epochs=200
 batch_size=128
@@ -24,7 +24,7 @@ label_info=
 
 $PYTHON -W ignore main.py --dataset ${dataset} \
     --data_path ./dataset/   \
-    --arch ${model} --save_path ./save/preresnet20/exp022720/decay0.0005_baseline \
+    --arch ${model} --save_path ./save/resnet20/exp030220/decay0.0002_PACT_SAWB_w4_a4 \
     --epochs ${epochs}  --learning_rate  0.1 \
     --optimizer ${optimizer} \
     --schedule 60 120   --gammas 0.1 0.1\
