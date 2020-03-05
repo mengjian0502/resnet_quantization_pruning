@@ -3,5 +3,5 @@
 *./*.pth
 __pycache__
 */__pycache__
-data
-save
+./dataset
+./save
