@@ -528,7 +528,18 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
                     reg_g1 += glasso_rank(w_l, 1)
                     count += 1
  
-            loss += lamda * (reg_g1) 
+            loss += lamda * (reg_g1)
+
+        # ============== reg of PACT =============== # 
+        if args.clp:
+            reg_alpha = torch.tensor(0.).cuda()
+            a_lambda = torch.tensor(args.a_lambda).cuda()
+            alpha = []
+            for name, param in model.named_parameters():
+                if 'alpha' in name:
+                    alpha.append(param.item())
+                    reg_alpha += param.item() ** 2
+            loss += a_lambda * (reg_alpha)
 
         # # ============ add group lasso ============#
 

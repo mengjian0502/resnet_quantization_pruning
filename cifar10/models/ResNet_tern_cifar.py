@@ -373,7 +373,7 @@ class ResNetBasicblock(nn.Module):
     # self.conv_b = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False) # full precision
     self.bn_b = nn.BatchNorm2d(planes)
 
-    self.relu = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
+    self.relu1 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
     self.downsample = downsample
 
   def forward(self, x):
