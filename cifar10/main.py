@@ -90,6 +90,10 @@ parser.add_argument('--clp', dest='clp',
                     action='store_true', help='using clipped relu in each stage')
 parser.add_argument('--a_lambda', type=float,
                     default=0.01, help='The parameter of alpha L2 regularization')
+# weight clipping
+parser.add_argument('--w_clp',action='store_true', help='using clipped quantized level')
+parser.add_argument('--b_lambda',type=float,
+                    default=0.01, help='The parameter of beta L2 regularization')
 
 # group lasso
 parser.add_argument('--swp', dest='swp',
@@ -561,12 +565,23 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
         if args.clp:
             reg_alpha = torch.tensor(0.).cuda()
             a_lambda = torch.tensor(args.a_lambda).cuda()
-            alpha = []
+
+            reg_beta = torch.tensor(0.).cuda()
+            b_lambda = torch.tensor(args.b_lambda).cuda()
+
+            alpha, beta = [], []
             for name, param in model.named_parameters():
                 if 'alpha' in name:
                     alpha.append(param.item())
                     reg_alpha += param.item() ** 2
-            loss += a_lambda * (reg_alpha)
+                if 'beta' in name and args.w_clp:
+                    beta.append(param.item())
+                    reg_beta += param.item() ** 2
+            if args.w_clp:
+                loss += a_lambda * (reg_alpha) + b_lambda * (reg_beta)
+            else:
+                loss += a_lambda * (reg_alpha)
+        
         # # ============ add group lasso ============#
 
         # measure accuracy and record loss
