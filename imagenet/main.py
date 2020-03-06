@@ -83,6 +83,12 @@ parser.add_argument('--workers', type=int, default=4,
 # random seed
 parser.add_argument('--manualSeed', type=int, default=5000, help='manual seed')
 
+# activation clipping
+parser.add_argument('--clp', dest='clp',
+                    action='store_true', help='using clipped relu in each stage')
+parser.add_argument('--a_lambda', type=float,
+                    default=0.01, help='The parameter of alpha L2 regularization')
+
 # group lasso
 parser.add_argument('--swp', dest='swp',
                     action='store_true', help='using structured pruning')
