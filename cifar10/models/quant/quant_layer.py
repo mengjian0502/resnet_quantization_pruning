@@ -114,7 +114,7 @@ class clamp_conv2d(nn.Conv2d):
 
         w_mean = self.weight.mean()
         weight_c = self.weight - w_mean
-        q_scale = get_scale(self.weight, z_net_4bit['resnet20']).item()
+        q_scale = get_scale(self.weight, z_typical_4bit).item()
 
         weight_th = weight_c.clamp(-q_scale, q_scale)
 

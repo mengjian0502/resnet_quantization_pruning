@@ -393,7 +393,7 @@ class ResNetBasicblock(nn.Module):
     if self.downsample is not None:
       residual = self.downsample(x)
     
-    return F.relu(residual + basicblock, inplace=True)
+    return self.relu2(residual + basicblock)
 
 
 class CifarResNet(nn.Module):
