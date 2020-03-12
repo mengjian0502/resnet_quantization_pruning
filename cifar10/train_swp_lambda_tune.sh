@@ -45,5 +45,5 @@ do
         --clp \
         --a_lambda 0.01 \
         --fine_tune \
-        --swp
+        --swp \
 done

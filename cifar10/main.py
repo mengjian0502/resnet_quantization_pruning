@@ -74,7 +74,7 @@ parser.add_argument('--fine_tune', dest='fine_tune', action='store_true',
                     help='fine tuning from the pre-trained model, force the start epoch be zero')
 parser.add_argument('--model_only', dest='model_only', action='store_true',
                     help='only save the model without external utils_')
-parser.add_argument('--save_freq', default=10, type=int, help='checkpoint saving frequency')
+parser.add_argument('--save_freq', default=50, type=int, help='checkpoint saving frequency')
 
 # Acceleration
 parser.add_argument('--ngpu', type=int, default=1, help='0 = CPU.')
@@ -102,6 +102,8 @@ parser.add_argument('--lamda', type=float,
                     default=0.001, help='The parameter for swp.')
 parser.add_argument('--ratio', type=float,
                     default=0.25, help='pruned ratio')
+parser.add_argument('--group_ch', type=int,
+                    default=16, help='group size for group lasso')
 
 parser.add_argument('--gradual_prune', dest='gradual_prune',
                     action='store_true', help='using structured pruning')
@@ -530,7 +532,7 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
         if args.swp:
             lamda = torch.tensor(args.lamda).cuda()
             reg_g1 = torch.tensor(0.).cuda()
-            group_ch = 16
+            group_ch = args.group_ch
             # == channel-wise defined 
             # for m in model.modules():
             #     if isinstance(m, nn.Conv2d):
@@ -548,11 +550,10 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
             for m in model.modules():
                 if isinstance(m, nn.Conv2d):
                     if not count in [0]:
-                         
                         w_l = m.weight
                         num_group = w_l.size(0) * w_l.size(1) // group_ch
-                        w_l = w_l.view(w_l.size(0), w_l.size(1) // group_ch, group_ch, 3, 3)
-                        w_l = w_l.contiguous().view((num_group, group_ch * 3 * 3))
+                        w_l = w_l.view(w_l.size(0), w_l.size(1) // group_ch, group_ch, m.weight.size(2), m.weight.size(3))
+                        w_l = w_l.contiguous().view((num_group, group_ch * m.weight.size(2) * m.weight.size(3)))
                         reg_g1 += glasso_thre(w_l, 1)
 
                         # reg_g1 += glasso_rank(w_l, 1)
@@ -566,21 +567,23 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
             reg_alpha = torch.tensor(0.).cuda()
             a_lambda = torch.tensor(args.a_lambda).cuda()
 
-            reg_beta = torch.tensor(0.).cuda()
-            b_lambda = torch.tensor(args.b_lambda).cuda()
-
-            alpha, beta = [], []
+            alpha = []
             for name, param in model.named_parameters():
                 if 'alpha' in name:
                     alpha.append(param.item())
                     reg_alpha += param.item() ** 2
+            loss += a_lambda * (reg_alpha)
+
+        if args.w_clp:
+            reg_beta = torch.tensor(0.).cuda()
+            b_lambda = torch.tensor(args.b_lambda).cuda()
+
+            beta = []
+            for name, param in model.named_parameters():
                 if 'beta' in name and args.w_clp:
                     beta.append(param.item())
                     reg_beta += param.item() ** 2
-            if args.w_clp:
-                loss += a_lambda * (reg_alpha) + b_lambda * (reg_beta)
-            else:
-                loss += a_lambda * (reg_alpha)
+            loss += b_lambda * (reg_beta)
         
         # # ============ add group lasso ============#
 
@@ -612,6 +615,9 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
         '  **Train** Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f} Error@1 {error1:.3f}'.format(top1=top1, top5=top5,
                                                                                               error1=100 - top1.avg),
         log)
+
+    if args.w_clp:
+        print(f"beta: {beta}")
     if args.clp:
         return top1.avg, losses.avg, alpha
     else:

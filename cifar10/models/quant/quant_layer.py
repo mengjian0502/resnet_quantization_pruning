@@ -39,7 +39,6 @@ class sawb_w2_Func(torch.autograd.Function):
 
         return grad_input
 
-
 class sawb_ternFunc(torch.autograd.Function):
     def __init__(self, th):
         super(sawb_ternFunc,self).__init__()
@@ -66,7 +65,7 @@ class sawb_ternFunc(torch.autograd.Function):
 class ClippedReLU(nn.Module):
     def __init__(self, num_bits, alpha=8.0, inplace=False, dequantize=True):
         super(ClippedReLU, self).__init__()
-        self.alpha = nn.Parameter(torch.Tensor([alpha]))        
+        self.alpha = nn.Parameter(torch.Tensor([alpha]))     
         self.num_bits = num_bits
         self.inplace = inplace
         self.dequantize = dequantize
@@ -79,30 +78,6 @@ class ClippedReLU(nn.Module):
             scale, zero_point = quantizer(self.num_bits, 0, self.alpha)
         input = STEQuantizer.apply(input, scale, zero_point, self.dequantize, self.inplace)
         return input
-
-class learn_clp(nn.Conv2d):
-
-    def forward(self, input):
-        beta = 5.0
-        beta = nn.Parameter(torch.Tensor([beta]))
-        num_bits = [4]
-
-        w_l = self.weight
-
-        w_mean = self.weight.mean()                     # mean of the weight
-        w_l = w_l - w_mean                              # center the weights
-
-        w_l = beta * torch.tanh(w_l)       
-        w_l = beta * w_l / 2 / torch.max(torch.abs(w_l)) + beta / 2
-        scale, zero_point = quantizer(num_bits[0], 0, abs(beta))
-
-        w_l = STEQuantizer.apply(w_l, scale, zero_point, True, False)
-
-        w_q = 2 * w_l - beta + w_mean
-
-        output = F.conv2d(input, w_q, self.bias, self.stride, self.padding, self.dilation, self.groups)
-        
-        return output
     
 class clamp_conv2d(nn.Conv2d):
 
