@@ -17,11 +17,10 @@ dataset=cifar10
 epochs=200
 batch_size=128
 optimizer=SGD
-group_ch=16
-lambda=0.004
+group_ch=8
 
-ub=0.007
-lb=0.005
+ub=0.001
+lb=0.007
 diff=0.001
 
 # add more labels as additional info into the saving path
@@ -33,7 +32,7 @@ for i in $(seq ${lb} ${diff} ${ub})
 do
     $PYTHON -W ignore main.py --dataset ${dataset} \
         --data_path ./dataset/   \
-        --arch ${model} --save_path ./save/resnet20/grp_sweep/ch16/decay0.0005_lambda${i}_swpTrue_W4_pactTrueA4_resumeTrue_fflf \
+        --arch ${model} --save_path ./save/resnet20/grp_sweep/ch${group_ch}/decay0.0005_lambda${i}_w4_a4_swpTrue_resumeTrue \
         --epochs ${epochs}  --learning_rate  0.01 \
         --optimizer ${optimizer} \
         --schedule 80 120 160   --gammas 0.1 0.1 0.5\
@@ -43,6 +42,7 @@ do
         --resume ${pretrained_model} \
         --fine_tune \
         --swp \
+	    --group_ch ${group_ch}
         --clp \
         --a_lambda 0.01
 done

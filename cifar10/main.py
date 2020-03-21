@@ -401,7 +401,7 @@ def main():
         if args.clp:
             train_acc, train_los, train_alpha = train(
                 train_loader, net, criterion, optimizer, epoch, log)
-            print(f"Epoch: {epoch}, Alpha: {train_alpha}")
+            print_log(f"Epoch: {epoch}, Alpha: {train_alpha}", log)
         else:
             train_acc, train_los = train(
                 train_loader, net, criterion, optimizer, epoch, log)
@@ -474,13 +474,13 @@ def glasso_thre(var, dim=0):
 
     return a.sum()
 
-def glasso_rank(var, dim=0):
+def glasso_rank(var, group_ch, dim=0):
     a = var.pow(2).sum(dim=dim).pow(1/2)
 
     a_sort, f = a.sort()
 
             
-    index = torch.tensor(int((args.ratio) * 16) * int(a.size(0)/16)).int()
+    index = torch.tensor(int((args.ratio) * group_ch) * int(a.size(0)/group_ch)).int()
 
     thre = a_sort[index-1]
     a = torch.min(a, thre)
@@ -551,10 +551,11 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
                 if isinstance(m, nn.Conv2d):
                     if not count in [0]:
                         w_l = m.weight
+                        kw = m.weight.size(2)
                         num_group = w_l.size(0) * w_l.size(1) // group_ch
-                        w_l = w_l.view(w_l.size(0), w_l.size(1) // group_ch, group_ch, m.weight.size(2), m.weight.size(3))
-                        w_l = w_l.contiguous().view((num_group, group_ch * m.weight.size(2) * m.weight.size(3)))
-                        reg_g1 += glasso_thre(w_l, 1)
+                        w_l = w_l.view(w_l.size(0), w_l.size(1) // group_ch, group_ch, kw, kw)
+                        w_l = w_l.contiguous().view((num_group, group_ch * kw * kw))
+                        reg_g1 += glasso_thre(w_l, group_ch, 1)
 
                         # reg_g1 += glasso_rank(w_l, 1)
                     count += 1
