@@ -19,9 +19,9 @@ batch_size=128
 optimizer=SGD
 group_ch=8
 
-ub=0.001
-lb=0.007
-diff=0.001
+ub=0.007
+lb=0.00025
+diff=0.00025
 
 # add more labels as additional info into the saving path
 label_info=
@@ -35,14 +35,14 @@ do
         --arch ${model} --save_path ./save/resnet20/grp_sweep/ch${group_ch}/decay0.0005_lambda${i}_w4_a4_swpTrue_resumeTrue \
         --epochs ${epochs}  --learning_rate  0.01 \
         --optimizer ${optimizer} \
-        --schedule 80 120 160   --gammas 0.1 0.1 0.5\
+        --schedule 80 120 160   --gammas 0.1 0.1 0.5 \
         --batch_size ${batch_size} --workers 4 --ngpu 1 --gpu_id 2 \
         --print_freq 100 --decay 0.0005 \
         --lamda ${i}   --ratio 0.7 \
         --resume ${pretrained_model} \
+        --clp \
+        --a_lambda 0.01 \
         --fine_tune \
         --swp \
 	    --group_ch ${group_ch}
-        --clp \
-        --a_lambda 0.01
 done

@@ -555,7 +555,7 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
                         num_group = w_l.size(0) * w_l.size(1) // group_ch
                         w_l = w_l.view(w_l.size(0), w_l.size(1) // group_ch, group_ch, kw, kw)
                         w_l = w_l.contiguous().view((num_group, group_ch * kw * kw))
-                        reg_g1 += glasso_thre(w_l, group_ch, 1)
+                        reg_g1 += glasso_thre(w_l, 1)
 
                         # reg_g1 += glasso_rank(w_l, 1)
                     count += 1
