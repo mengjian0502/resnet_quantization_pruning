@@ -74,7 +74,6 @@ parser.add_argument('--fine_tune', dest='fine_tune', action='store_true',
                     help='fine tuning from the pre-trained model, force the start epoch be zero')
 parser.add_argument('--model_only', dest='model_only', action='store_true',
                     help='only save the model without external utils_')
-parser.add_argument('--save_freq', default=50, type=int, help='checkpoint saving frequency')
 
 # Acceleration
 parser.add_argument('--ngpu', type=int, default=1, help='0 = CPU.')
@@ -437,9 +436,8 @@ def main():
                 'optimizer': optimizer.state_dict(),
             }
 
-        if epoch % args.save_freq == 0:
-            save_checkpoint(checkpoint_state, is_best,
-                            args.save_path, f'checkpoint_{epoch}.pth.tar', log)
+        save_checkpoint(checkpoint_state, is_best,
+                        args.save_path, f'checkpoint.pth.tar', log)
 
         # measure elapsed time
         epoch_time.update(time.time() - start_time)
@@ -652,8 +650,7 @@ def validate(val_loader, model, criterion, log):
 
         print_log(
             '  **Test** Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f} Error@1 {error1:.3f}'.format(top1=top1, top5=top5,
-                                                                                                 error1=100 - top1.avg),
-            log)
+                                                                                                 error1=100 - top1.avg),log)
 
     return top1.avg, losses.avg
 

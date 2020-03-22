@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import init
-from .quant import clamp_conv2d, ClippedReLU, conv2d_Q_fn, PACT_conv2d
+from .quant import clamp_conv2d, ClippedReLU, conv2d_Q_fn, PACT_conv2d, int_conv2d
 import math
 
 class _pruneFunc_mask(torch.autograd.Function):
@@ -362,14 +362,14 @@ class ResNetBasicblock(nn.Module):
     super(ResNetBasicblock, self).__init__() 
     # self.conv_a = quanConv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)  # aaai ternary
     # self.conv_a = sawb_tern_Conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False) # sawb ternary
-    self.conv_a = clamp_conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)  # quantization
+    self.conv_a = int_conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)  # quantization
     # self.conv_a = PACT_conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False, beta=1.0)   
     # self.conv_a = nn.Conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)   # full precision
     self.bn_a = nn.BatchNorm2d(planes)
     self.relu1 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
     # self.conv_b = quanConv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # aaai ternary
     # self.conv_b = sawb_tern_Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # sawb ternary
-    self.conv_b = clamp_conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # quantization
+    self.conv_b = int_conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # quantization
     # self.conv_b = PACT_conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False, beta=1.0)
     # self.conv_b = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False) # full precision
     self.bn_b = nn.BatchNorm2d(planes)

@@ -19,20 +19,20 @@ batch_size=128
 optimizer=SGD
 group_ch=16
 
-ub=0.001
-lb=0.001
-diff=0.002
+ub=0.0005
+lb=0.0005
+diff=0.0002
 
 # add more labels as additional info into the saving path
 label_info=
 
-pretrained_model="./save/resnet20/decay0.0002_fullprecision_multiplecheckpoints_fflf/model_best.pth.tar"
+pretrained_model="./save/resnet20/grp_sweep/ch16/decay0.0005_lambda0.0005_w4_a4_swpTrue_resumeTrue/model_best.pth.tar"
 
 for i in $(seq ${lb} ${diff} ${ub})
 do
     $PYTHON -W ignore main.py --dataset ${dataset} \
         --data_path ./dataset/   \
-        --arch ${model} --save_path ./save/resnet20/grp_sweep/ch${group_ch}/decay0.0005_lambda${i}_w4_a4_swpTrue_resumeTrue_symm \
+        --arch ${model} --save_path ./save/resnet20/grp_sweep/ch${group_ch}/decay0.0005_lambda${i}_w4_a4_swpTrue_resumeTrue_eval \
         --epochs ${epochs}  --learning_rate  0.01 \
         --optimizer ${optimizer} \
         --schedule 80 120 160   --gammas 0.1 0.1 0.5 \
@@ -40,9 +40,5 @@ do
         --print_freq 100 --decay 0.0005 \
         --lamda ${i}   --ratio 0.7 \
         --resume ${pretrained_model} \
-        --clp \
-        --a_lambda 0.01 \
-        --fine_tune \
-        --swp \
-	    --group_ch ${group_ch}
+        --evaluate
 done

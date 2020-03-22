@@ -9,7 +9,7 @@ import numpy as np
 from torch.autograd import Variable
 from .quantizer import *
 
-__all__ = ['ClippedReLU', 'clamp_conv2d', 'sawb_tern_Conv2d']
+__all__ = ['ClippedReLU', 'clamp_conv2d', 'sawb_tern_Conv2d', 'int_conv2d']
 
 
 class sawb_w2_Func(torch.autograd.Function):
@@ -100,9 +100,58 @@ class clamp_conv2d(nn.Conv2d):
 
         weight_q = 2 * weight_th - q_scale + w_mean
 
+        q_levels = torch.unique(weight_q)
+        idx = np.argsort(abs(q_levels.cpu().numpy()))
+        
+        weight_q[weight_q==q_levels[7]] = 0.
+        weight_q[weight_q==q_levels[8]] = 0.
+
         output = F.conv2d(input, weight_q, self.bias, self.stride, self.padding, self.dilation, self.groups)
         
         return output
+
+class int_quant_func(torch.autograd.Function):
+    def __init__(self, nbit):
+        super(int_quant_func, self).__init__()
+        self.nbit = nbit
+    
+    def forward(self, input):
+        self.save_for_backward(input)
+
+        z_typical = {'4bit': [0.077, 1.013], '8bit':[0.027, 1.114]}                 # c1, c2 from the typical distribution (4bit)
+        z_net_4bit = {'resnet20': [0.107, 0.881]}                                   # c1, c2 from the specifical models
+
+        alpha_w = get_scale(input, z_typical['4bit']).item()
+        # print(f'alpha_w={alpha_w}')
+        output = input.clamp(-alpha_w, alpha_w)
+
+        # scale, zero_point = quantizer(self.nbit, -abs(alpha_w), abs(alpha_w))
+        scale, zero_point = symmetric_linear_quantization_params(self.nbit, abs(alpha_w), restrict_qrange=True)
+        # output = STEQuantizer.apply(output, scale, zero_point, True, False)
+        output = STEQuantizer_weight.apply(output, scale, zero_point, True, False)
+        return output
+    
+    def backward(self, grad_output):
+        grad_input = grad_output.clone()
+        input, = self.saved_tensors
+        grad_input[input.ge(1)] = 0
+        grad_input[input.le(-1)] = 0
+        return grad_input
+
+class int_conv2d(nn.Conv2d):
+    def forward(self, input):
+        w_mean = self.weight.mean()
+        weight_c = self.weight - w_mean
+
+        weight_q = int_quant_func(nbit=4)(weight_c)
+        
+        q_levels = torch.unique(weight_q)
+        
+        # print(f'q_levels: {q_levels}')
+
+        output = F.conv2d(input, weight_q, self.bias, self.stride, self.padding, self.dilation, self.groups)
+        return output
+
 
 class sawb_tern_Conv2d(nn.Conv2d):
 
