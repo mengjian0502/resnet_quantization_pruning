@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 
-PYTHON="/home/mengjian/anaconda3/envs/myenv_pc/bin/python3"
+PYTHON="/home/mengjian/anaconda3/bin/python3"
 
 ############ directory to save result #############
 DATE=`date +%Y-%m-%d`
@@ -24,7 +24,7 @@ label_info=
 
 $PYTHON -W ignore main.py --dataset ${dataset} \
     --data_path ./dataset/   \
-    --arch ${model} --save_path ./save/resnet20/grp_sweep/decay0.0002_w4_a4_swpTrue_lambda0.0007 \
+    --arch ${model} --save_path ./save/resnet20/decay0.0002_w4_a4_swpFalse \
     --epochs ${epochs}  --learning_rate  0.1 \
     --optimizer ${optimizer} \
     --schedule 60 120   --gammas 0.1 0.1\
