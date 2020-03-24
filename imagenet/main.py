@@ -76,7 +76,7 @@ parser.add_argument('--model_only', dest='model_only', action='store_true',
 
 # Acceleration
 parser.add_argument('--ngpu', type=int, default=1, help='0 = CPU.')
-parser.add_argument('--gpu_id', type=int, default=0,
+parser.add_argument('--gpu_id', type=int, default=[0,1,2],
                     help='device range [0,ngpu-1]')
 parser.add_argument('--workers', type=int, default=4,
                     help='number of data loading workers (default: 2)')
@@ -93,9 +93,10 @@ parser.add_argument('--a_lambda', type=float,
 parser.add_argument('--swp', dest='swp',
                     action='store_true', help='using structured pruning')
 parser.add_argument('--lamda', type=float,
-                    default=0.001, help='The parameter for swp.')
+                    default=0.00025, help='The parameter for swp.')
 parser.add_argument('--ratio', type=float,
                     default=0.25, help='pruned ratio')
+parser.add_argument('--group_ch', type=int, default=64, help='group size of group lasso')
 
 parser.add_argument('--gradual_prune', dest='gradual_prune',
                     action='store_true', help='using structured pruning')
@@ -109,7 +110,6 @@ parser.add_argument('--layer_inter', type=int, default=1,  help='compress layer 
 ##########################################################################
 
 args = parser.parse_args()
-
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 if args.ngpu == 1:
     # make only device #gpu_id visible, then
@@ -127,6 +127,7 @@ if args.use_cuda:
     torch.cuda.manual_seed_all(args.manualSeed)
 
 cudnn.benchmark = True
+
 
 
 ###############################################################################
@@ -375,7 +376,7 @@ def main():
     w_zero_idx = []
     thre_swp = []
     thre_mean = []
-    group_ch = 64
+    # group_ch = 64
     spar = []
     for epoch in range(args.start_epoch, args.epochs):
         current_learning_rate, current_momentum = adjust_learning_rate(
@@ -395,11 +396,15 @@ def main():
 
 
         # train for one epoch
-        train_acc, train_los = train(
-            train_loader, net, criterion, optimizer, epoch, log)
-       
-       
-       
+        if args.clp:
+            train_acc, train_los, train_alpha = train(
+                train_loader, net, criterion, optimizer, epoch, log)
+            print_log(f"Epoch: {epoch}, Alpha: {train_alpha}", log)
+        else:
+            train_acc, train_los = train(
+                train_loader, net, criterion, optimizer, epoch, log)
+
+
         # evaluate on validation set
         val_acc, val_los = validate(test_loader, net, criterion, log)
 
@@ -425,13 +430,14 @@ def main():
             checkpoint_state = {
                 'epoch': epoch + 1,
                 'arch': args.arch,
+                'alpha': train_alpha, 
                 'state_dict': net.state_dict(),
                 'recorder': recorder,
                 'optimizer': optimizer.state_dict(),
             }
 
         save_checkpoint(checkpoint_state, is_best,
-                        args.save_path, 'checkpoint.pth.tar', log)
+                        args.save_path, f'checkpoint_{epoch}.pth.tar', log)
 
         # measure elapsed time
         epoch_time.update(time.time() - start_time)
@@ -462,12 +468,12 @@ def glasso_thre(var, dim=0):
 
     return a.sum()
 
-def glasso_rank(var, dim=0):
+def glasso_rank(var, group_ch, dim=0):
     a = var.pow(2).sum(dim=dim).pow(1/2)
     a_sort, _ = a.sort()
     # num_keep = int(16 * 0.7) * int(out_channels/16)
             
-    index = torch.tensor(int((args.ratio) * 16) * int(a.size(0)/16)).int()
+    index = torch.tensor(int((args.ratio) * group_ch) * int(a.size(0)/group_ch)).int()
 
     thre = a_sort[index-1]
     #thre = a_sort[index-1]
@@ -507,7 +513,7 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
             lamda = torch.tensor(args.lamda).cuda()
             reg_g1 = torch.tensor(0.).cuda()
             # reg_g2 = torch.tensor(0.).cuda()
-            group_ch = 64
+            group_ch = args.group_ch
             # == channel-wise defined 
             # for m in model.modules():
             #     if isinstance(m, nn.Conv2d):
@@ -525,15 +531,15 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
             for m in model.modules():
                 if isinstance(m, nn.Conv2d):
                     # if not count in [0, 5, 7, 10, 12, 15, 17]:
-
-                    w_l = m.weight
-                    num_group = w_l.size(0) * w_l.size(1) // group_ch
-                    kernel = w_l.size(2)
-                    w_l = w_l.view(w_l.size(0), w_l.size(1) // group_ch, group_ch, kernel, kernel)
-                    w_l = w_l.contiguous().view((num_group, group_ch * kernel * kernel))
-                    reg_g1 += glasso_rank(w_l, 1)
+                    if not count in [0]:
+                        w_l = m.weight
+                        num_group = w_l.size(0) * w_l.size(1) // group_ch
+                        kernel = w_l.size(2)
+                        w_l = w_l.view(w_l.size(0), w_l.size(1) // group_ch, group_ch, kernel, kernel)
+                        w_l = w_l.contiguous().view((num_group, group_ch * kernel * kernel))
+                        reg_g1 += glasso_thre(w_l, 1)
                     count += 1
- 
+
             loss += lamda * (reg_g1)
 
         # ============== reg of PACT =============== # 
@@ -577,7 +583,11 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
         '  **Train** Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f} Error@1 {error1:.3f}'.format(top1=top1, top5=top5,
                                                                                               error1=100 - top1.avg),
         log)
-    return top1.avg, losses.avg
+    
+    if args.clp:
+        return top1.avg, losses.avg, alpha
+    else:
+        return top1.avg, losses.avg
 
 
 def validate(val_loader, model, criterion, log):

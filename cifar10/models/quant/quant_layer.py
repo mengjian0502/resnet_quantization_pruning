@@ -85,7 +85,7 @@ class clamp_conv2d(nn.Conv2d):
         
         num_bits = [4]
         z_typical_4bit = [0.077, 1.013]                 # c1, c2 from the typical distribution (4bit)
-        z_net_4bit = {'resnet20': [0.107, 0.881]}       # c1, c2 from the specifical models
+        # z_net_4bit = {'resnet20': [0.107, 0.881]}       # c1, c2 from the specifical models
 
         w_mean = self.weight.mean()
         weight_c = self.weight - w_mean
