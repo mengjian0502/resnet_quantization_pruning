@@ -12,7 +12,7 @@ if [ ! -d "$DIRECTORY" ]; then
 fi
 
 ############ Configurations ###############
-model=resnet18b_ff_lf_tex1
+model=resnet18b_ff_lf_w4_a4_tex1
 dataset=imagenet
 epochs=60
 batch_size=256

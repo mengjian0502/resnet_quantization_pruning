@@ -65,7 +65,30 @@ def quantizer(num_bits, saturation_min, saturation_max,
     if is_scalar:
         return scale.item(), zero_point.item()
     return scale, zero_point
-        
+
+def symmetric_linear_quantization_params(num_bits, saturation_val, restrict_qrange=False):
+    is_scalar, sat_val = to_tensor(saturation_val)
+
+    if any(sat_val < 0):
+        raise ValueError('Saturation value must be >= 0')
+
+    if restrict_qrange:
+        n = 2 ** (num_bits - 1) - 1
+    else:
+        n = (2 ** num_bits - 1) / 2
+
+    # If float values are all 0, we just want the quantized values to be 0 as well. So overriding the saturation
+    # value to 'n', so the scale becomes 1
+    # sat_val[sat_val == 0] = n
+    scale = n / sat_val
+    zero_point = torch.zeros_like(scale)
+
+    if is_scalar:
+        # If input was scalar, return scalars
+        return scale.item(), zero_point.item()
+    return scale, zero_point
+
+
 
 def get_scale(input, z):
     # c1, c2 = 3.212, 2.178         # 2bit from typical distribution regression
@@ -97,6 +120,26 @@ class STEQuantizer(torch.autograd.Function):
             ctx.mark_dirty(input)
 
         output = linear_quantize(input, scale, zero_point)
+        if dequantize:
+            output = linear_dequantize(output, scale, zero_point)  
+        return output
+    
+    @staticmethod
+    def backward(ctx, grad_output):
+        """
+        Straight Through Estimator
+        """
+        
+        return grad_output, None, None, None, None
+
+class STEQuantizer_weight(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input, scale, zero_point, dequantize, inplace):
+        if inplace:
+            ctx.mark_dirty(input)
+
+        output = linear_quantize(input, scale, zero_point)
+        # print(f'quantized INT = {len(torch.unique(output))}')
         if dequantize:
             output = linear_dequantize(output, scale, zero_point)  
         return output
