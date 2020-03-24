@@ -145,7 +145,7 @@ class int_conv2d(nn.Conv2d):
 
         weight_q = int_quant_func(nbit=4)(weight_c)
         
-        q_levels = torch.unique(weight_q)
+        # q_levels = torch.unique(weight_q)
         
         # print(f'q_levels: {q_levels}')
 
@@ -162,4 +162,6 @@ class sawb_tern_Conv2d(nn.Conv2d):
         weight = sawb_ternFunc(th=quan_th)(self.weight)
         output = F.conv2d(input, weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
         
-        return output 
+        return output
+
+        
