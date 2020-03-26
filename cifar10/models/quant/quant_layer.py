@@ -85,7 +85,7 @@ class clamp_conv2d(nn.Conv2d):
         
         num_bits = [4]
         z_typical_4bit = [0.077, 1.013]                 # c1, c2 from the typical distribution (4bit)
-        z_net_4bit = {'resnet20': [0.107, 0.881]}       # c1, c2 from the specifical models
+        # z_net_4bit = {'resnet20': [0.107, 0.881]}       # c1, c2 from the specifical models
 
         w_mean = self.weight.mean()
         weight_c = self.weight - w_mean
@@ -122,13 +122,10 @@ class int_quant_func(torch.autograd.Function):
         z_net_4bit = {'resnet20': [0.107, 0.881]}                                   # c1, c2 from the specifical models
 
         alpha_w = get_scale(input, z_typical['4bit']).item()
-        # print(f'alpha_w={alpha_w}')
         output = input.clamp(-alpha_w, alpha_w)
 
-        # scale, zero_point = quantizer(self.nbit, -abs(alpha_w), abs(alpha_w))
         scale, zero_point = symmetric_linear_quantization_params(self.nbit, abs(alpha_w), restrict_qrange=True)
-        # output = STEQuantizer.apply(output, scale, zero_point, True, False)
-        output = STEQuantizer_weight.apply(output, scale, zero_point, True, False)
+        output = STEQuantizer.apply(output, scale, zero_point, True, False)
         return output
     
     def backward(self, grad_output):
@@ -145,13 +142,10 @@ class int_conv2d(nn.Conv2d):
 
         weight_q = int_quant_func(nbit=4)(weight_c)
         
-        q_levels = torch.unique(weight_q)
-        
-        # print(f'q_levels: {q_levels}')
+        weight_q += w_mean
 
         output = F.conv2d(input, weight_q, self.bias, self.stride, self.padding, self.dilation, self.groups)
         return output
-
 
 class sawb_tern_Conv2d(nn.Conv2d):
 
@@ -162,4 +156,6 @@ class sawb_tern_Conv2d(nn.Conv2d):
         weight = sawb_ternFunc(th=quan_th)(self.weight)
         output = F.conv2d(input, weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
         
-        return output 
+        return output
+
+        

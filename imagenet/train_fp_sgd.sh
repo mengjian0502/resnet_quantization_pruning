@@ -12,7 +12,7 @@ if [ ! -d "$DIRECTORY" ]; then
 fi
 
 ############ Configurations ###############
-model=resnet18b_w4_a4_tex1
+model=resnet18b_ff_lf_w4_a4_tex1
 dataset=imagenet
 epochs=110
 batch_size=256
@@ -22,7 +22,7 @@ label_info=
 
 CUDA_VISIBILE_DEVICES=0,2,3 $PYTHON -W ignore main.py --dataset ${dataset} \
     --data_path ${imagenet_path}   \
-    --arch ${model} --save_path ./save/resnet18/sgd/test \
+    --arch ${model} --save_path ./save/resnet18/sgd/resnet18_w4_a4_swpFalse_symm \
     --epochs ${epochs} --learning_rate 0.1 \
     --optimizer ${optimizer} \
     --schedule 30 60 85 95  --gammas 0.1 0.1 0.1 0.1 \

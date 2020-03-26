@@ -3,11 +3,11 @@ import math
 import torch.utils.model_zoo as model_zoo
 import torch.nn.functional as F
 import torch
+from collections import OrderedDict
 from torch.nn import init
-from .quant import clamp_conv2d, ClippedReLU, conv2d_Q_fn
+from .quant import int_conv2d, ClippedReLU
 
-__all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
-           'resnet152']
+__all__ = ['ResNet', 'resnet18b_ff_lf_w4_a4_tex1']
 
 
 model_urls = {
@@ -124,7 +124,7 @@ def conv3x3_bl(in_planes, out_planes, stride=1):
                      padding=1, bias=False)
 
 def conv3x3_quan(in_planes, out_planes, stride=1):
-    return clamp_conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
+    return int_conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
                      padding=1, bias=False)
 
 class BasicBlock(nn.Module):
@@ -132,20 +132,24 @@ class BasicBlock(nn.Module):
 
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(BasicBlock, self).__init__()
-        self.conv1 = conv3x3_bl(inplanes, planes, stride)
+        self.conv1 = conv3x3_quan(inplanes, planes, stride)
         self.bn1 = nn.BatchNorm2d(planes)
-        self.relu = nn.ReLU(inplace=True)
-        self.conv2 = conv3x3_bl(planes, planes)
+        # self.relu = nn.ReLU(inplace=True)
+        self.relu1 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
+        self.conv2 = conv3x3_quan(planes, planes)
         self.bn2 = nn.BatchNorm2d(planes)
+        self.relu2 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
         self.downsample = downsample
         self.stride = stride
+        self.relu2 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
+        # self.relu2 = nn.ReLU(inplace=True)
 
     def forward(self, x):
         residual = x
 
         out = self.conv1(x)
         out = self.bn1(out)
-        out = self.relu(out)
+        out = self.relu1(out)
 
         out = self.conv2(out)
         out = self.bn2(out)
@@ -154,7 +158,7 @@ class BasicBlock(nn.Module):
             residual = self.downsample(x)
 
         out += residual
-        out = self.relu(out)
+        out = self.relu2(out)
 
         return out
 
@@ -167,7 +171,7 @@ class Bottleneck(nn.Module):
         # self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
         # self.conv1 = quanConv2d(inplanes, planes, kernel_size=1, stride=1, 
         #                         padding=0, bias=False)
-        self.conv1 = clamp_conv2d(inplanes, planes, kernel_size=1, stride=1, 
+        self.conv1 = int_conv2d(inplanes, planes, kernel_size=1, stride=1, 
                                  padding=0, bias=False)
 
         self.bn1 = nn.BatchNorm2d(planes)
@@ -175,14 +179,14 @@ class Bottleneck(nn.Module):
         #                        padding=1, bias=False)
         # self.conv2 = quanConv2d(planes, planes, kernel_size=3, stride=stride, 
         #                         padding=1, bias=False)
-        self.conv2 = clamp_conv2d(planes, planes, kernel_size=3, stride=stride, 
+        self.conv2 = int_conv2d(planes, planes, kernel_size=3, stride=stride, 
                                  padding=1, bias=False)
 
         self.bn2 = nn.BatchNorm2d(planes)
         # self.conv3 = nn.Conv2d(planes, planes * self.expansion, kernel_size=1, bias=False)
         # self.conv3 = quanConv2d(planes, planes * self.expansion, kernel_size=1, stride=1, 
         #                         padding=0, bias=False)
-        self.conv2 = clamp_conv2d(planes, planes * self.expansion, kernel_size=1, stride=1, 
+        self.conv2 = int_conv2d(planes, planes * self.expansion, kernel_size=1, stride=1, 
                                  padding=0, bias=False)
         
         self.bn3 = nn.BatchNorm2d(planes * self.expansion)
@@ -252,9 +256,7 @@ class ResNet(nn.Module):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
-                # quanConv2d(self.inplanes, planes * block.expansion,
-                #           kernel_size=1, stride=stride, bias=False),
-                nn.Conv2d(self.inplanes, planes * block.expansion,
+                int_conv2d(self.inplanes, planes * block.expansion,
                           kernel_size=1, stride=stride, bias=False),
                 nn.BatchNorm2d(planes * block.expansion),
             )
@@ -284,10 +286,31 @@ class ResNet(nn.Module):
 
         return x
 
+def state_dict_update(pretrain_dict):
+    new_state_dict = OrderedDict()
+    for k, v in pretrain_dict.items():
+        print(k)
+        name = k
+        new_state_dict[name] = v
+    return new_state_dict
 
 def resnet18b_ff_lf_tex1(num_classes=1000):
     model = ResNet(BasicBlock, [2, 2, 2, 2], fp_fl=True, fp_ll=True)
-    model.load_state_dict(model_zoo.load_url(model_urls['resnet18']))
+    
+    state_tmp = model.state_dict()
+    pretrain_dict = model_zoo.load_url(model_urls['resnet18'])
+    state_tmp.update(state_dict_update(pretrain_dict))
+
+    #model.load_state_dict(model_zoo.load_url(model_urls['resnet18']))
+    model.load_state_dict(state_tmp)
+    return model
+
+def resnet18b_w4_a4_tex1(num_classes=1000):
+    model = ResNet(BasicBlock, [2, 2, 2, 2], fp_fl=True, fp_ll=True)
+    return model
+
+def resnet18b_ff_lf_w4_a4_tex1(num_classes=1000):
+    model = ResNet(BasicBlock, [2, 2, 2, 2], fp_fl=True, fp_ll=True)
     return model
 
 def resnet18b_fq_lq_tex1(num_classes=1000):
