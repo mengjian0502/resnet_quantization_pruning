@@ -20,8 +20,8 @@ optimizer=SGD
 group_ch=16
 
 ub=0.001
-lb=0.001
-diff=0.002
+lb=0.008
+diff=0.001
 
 # add more labels as additional info into the saving path
 label_info=
