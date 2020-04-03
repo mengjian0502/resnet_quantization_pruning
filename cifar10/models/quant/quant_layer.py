@@ -63,7 +63,7 @@ class sawb_ternFunc(torch.autograd.Function):
 
 class zero_skp_quant(torch.autograd.Function):
     def __init__(self, nbit, th, group_ch):
-        super(zero_skp_func, self).__init__()
+        super(zero_skp_quant, self).__init__()
         self.nbit = nbit
         self.th = th
         self.group_ch = group_ch
