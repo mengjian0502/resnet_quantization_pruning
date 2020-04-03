@@ -9,7 +9,7 @@ import numpy as np
 from torch.autograd import Variable
 from .quantizer import *
 
-__all__ = ['ClippedReLU', 'clamp_conv2d', 'sawb_tern_Conv2d', 'int_conv2d']
+__all__ = ['ClippedReLU', 'clamp_conv2d', 'sawb_tern_Conv2d', 'int_conv2d', 'zero_grp_skp_quant']
 
 class sawb_w2_Func(torch.autograd.Function):
 
@@ -205,4 +205,9 @@ class sawb_tern_Conv2d(nn.Conv2d):
 
 class zero_grp_skp_quant(nn.Conv2d):
     def forward(self, input):
-        pass
+        weight = self.weight
+
+        weight_q = zero_skp_quant(nbit=4, th=1e-3, group_ch=16)
+        output = F.conv2d(input, weight_q, self.bias, self.stride, self.padding, self.dilation, self.groups)
+        
+        return output
