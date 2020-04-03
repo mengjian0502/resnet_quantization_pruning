@@ -17,7 +17,7 @@ dataset=cifar10
 epochs=200
 batch_size=128
 optimizer=SGD
-group_ch=1
+group_ch=16
 
 ub=0.005
 lb=0.001
@@ -32,7 +32,7 @@ for i in $(seq ${lb} ${diff} ${ub})
 do
     $PYTHON -W ignore main.py --dataset ${dataset} \
         --data_path ./dataset/   \
-        --arch ${model} --save_path ./save/resnet20/quant_scheme/even_level_asymm_grp_sweep/ch${group_ch}/decay0.0005_lambda${i}_w4_a4_swpTrue_resumeTrue_even_level_asymm_qsc \
+        --arch ${model} --save_path ./save/resnet20/quant_scheme/even_level_zero_skip_grp_sweep/ch${group_ch}/decay0.0005_lambda${i}_w4_a4_swpTrue_resumeTrue_even_level_zero_skip_qsc \
         --epochs ${epochs}  --learning_rate  0.01 \
         --optimizer ${optimizer} \
         --schedule 80 120 160   --gammas 0.1 0.1 0.5 \

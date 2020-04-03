@@ -441,7 +441,7 @@ class CifarResNet(nn.Module):
     downsample = None
     if stride != 1 or self.inplanes != planes * block.expansion:
       downsample = nn.Sequential(
-        int_conv2d(self.inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=False),
+        zero_grp_skp_quant(self.inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=False),
         nn.BatchNorm2d(planes * block.expansion),
         )
       # downsample = DownsampleA(self.inplanes, planes * block.expansion, stride)
