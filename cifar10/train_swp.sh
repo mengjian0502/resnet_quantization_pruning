@@ -19,8 +19,8 @@ batch_size=128
 optimizer=SGD
 group_ch=1
 
-ub=0.000125
-lb=0.000125
+ub=0.005
+lb=0.001
 diff=0.001
 
 # add more labels as additional info into the saving path
@@ -32,7 +32,7 @@ for i in $(seq ${lb} ${diff} ${ub})
 do
     $PYTHON -W ignore main.py --dataset ${dataset} \
         --data_path ./dataset/   \
-        --arch ${model} --save_path ./save/resnet20/grp_sweep/ch${group_ch}/decay0.0005_lambda${i}_w4_a4_swpTrue_resumeTrue_symm_qsc \
+        --arch ${model} --save_path ./save/resnet20/quant_scheme/even_level_asymm_grp_sweep/ch${group_ch}/decay0.0005_lambda${i}_w4_a4_swpTrue_resumeTrue_even_level_asymm_qsc \
         --epochs ${epochs}  --learning_rate  0.01 \
         --optimizer ${optimizer} \
         --schedule 80 120 160   --gammas 0.1 0.1 0.5 \

@@ -11,7 +11,6 @@ from .quantizer import *
 
 __all__ = ['ClippedReLU', 'clamp_conv2d', 'sawb_tern_Conv2d', 'int_conv2d']
 
-
 class sawb_w2_Func(torch.autograd.Function):
 
     def __init__(self, alpha):
@@ -56,6 +55,50 @@ class sawb_ternFunc(torch.autograd.Function):
 
     def backward(self, grad_output):
         # saved tensors - tuple of tensors with one element
+        grad_input = grad_output.clone()
+        input, = self.saved_tensors
+        grad_input[input.ge(1)] = 0
+        grad_input[input.le(-1)] = 0
+        return grad_input
+
+class zero_skp_quant(torch.autograd.Function):
+    def __init__(self, nbit, th, group_ch):
+        super(zero_skp_func, self).__init__()
+        self.nbit = nbit
+        self.th = th
+        self.group_ch = group_ch
+    
+    def forward(self, input):
+        cout = input.size(0)
+        cin = input.size(1)
+        kh = input.size(2)
+        kw = input.size(3)
+        num_group = (cout * cin) // group_ch
+
+        z_typical = {'4bit': [0.077, 1.013], '8bit':[0.027, 1.114]}                 # c1, c2 from the typical distribution (4bit)
+
+        input_sparse = torch.zeros_like(input)
+        input_sparse[input.abs().gt(self.th)] = input[input.abs().gt(self.th)]
+        w_t = input_sparse.view(cout, cin // self.group_ch, self.group_ch, kh, kw)
+        w_t = w_t.view(num_group, self.group_ch*kh*kw)
+
+        non_zero_idx = torch.nonzero(torch.sum(w_t, dim=1)).squeeze(1)             # get the indexes of the nonzero groups
+        non_zero_grp = w_t[non_zero_idx]
+        
+        alpha_w = get_scale(non_zero_grp, z_typical[f'{int(self.nbit)}bit'])
+        non_zero_grp = non_zero_grp.clamp(-alpha_w, alpha_w)
+
+        non_zero_grp = alpha_w * non_zero_grp / 2 / torch.max(torch.abs(non_zero_grp)) + alpha_w / 2
+
+        scale, zero_point = quantizer(self.nbit, 0, alpha_w)
+        non_zero_grp = STEQuantizer.apply(non_zero_grp, scale, zero_point, True, False)
+
+        w_t[non_zero_idx] = non_zero_grp
+        
+        output = w_t.clone().resize_as_(input)
+        return output
+
+    def backward(self, grad_output):
         grad_input = grad_output.clone()
         input, = self.saved_tensors
         grad_input[input.ge(1)] = 0
@@ -159,4 +202,7 @@ class sawb_tern_Conv2d(nn.Conv2d):
         
         return output
 
-        
+
+class zero_grp_skp_quant(nn.Conv2d):
+    def forward(self, input):
+        pass
