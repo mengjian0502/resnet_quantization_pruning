@@ -73,7 +73,7 @@ class zero_skp_quant(torch.autograd.Function):
         cin = input.size(1)
         kh = input.size(2)
         kw = input.size(3)
-        num_group = (cout * cin) // group_ch
+        num_group = (cout * cin) // self.group_ch
 
         z_typical = {'4bit': [0.077, 1.013], '8bit':[0.027, 1.114]}                 # c1, c2 from the typical distribution (4bit)
 
