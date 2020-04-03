@@ -70,7 +70,7 @@ class zero_skp_quant(torch.autograd.Function):
     
     def forward(self, input):
         self.save_for_backward(input)
-        
+
         cout = input.size(0)
         cin = input.size(1)
         kh = input.size(2)
@@ -95,7 +95,9 @@ class zero_skp_quant(torch.autograd.Function):
         scale, zero_point = quantizer(self.nbit, 0, alpha_w)
         non_zero_grp = STEQuantizer.apply(non_zero_grp, scale, zero_point, True, False)
 
-        w_t[non_zero_idx] = non_zero_grp
+        weight_q = 2 * non_zero_grp - alpha_w
+
+        w_t[non_zero_idx] = weight_q
         
         output = w_t.clone().resize_as_(input)
         return output
