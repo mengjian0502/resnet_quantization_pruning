@@ -111,9 +111,10 @@ class clamp_conv2d(nn.Conv2d):
         return output
 
 class int_quant_func(torch.autograd.Function):
-    def __init__(self, nbit):
+    def __init__(self, nbit, restrictRange=True):
         super(int_quant_func, self).__init__()
         self.nbit = nbit
+        self.restrictRange = restrictRange
     
     def forward(self, input):
         self.save_for_backward(input)
@@ -124,8 +125,8 @@ class int_quant_func(torch.autograd.Function):
         alpha_w = get_scale(input, z_typical['4bit']).item()
         output = input.clamp(-alpha_w, alpha_w)
 
-        scale, zero_point = symmetric_linear_quantization_params(self.nbit, abs(alpha_w), restrict_qrange=True)
-        output = STEQuantizer.apply(output, scale, zero_point, True, False)
+        scale, zero_point = symmetric_linear_quantization_params(self.nbit, abs(alpha_w), restrict_qrange=self.restrictRange)
+        output = STEQuantizer_weight.apply(output, scale, zero_point, True, False, self.nbit, self.restrictRange)
         return output
     
     def backward(self, grad_output):
@@ -140,7 +141,7 @@ class int_conv2d(nn.Conv2d):
         w_mean = self.weight.mean()
         weight_c = self.weight - w_mean
 
-        weight_q = int_quant_func(nbit=4)(weight_c)
+        weight_q = int_quant_func(nbit=4, restrictRange=False)(weight_c)
         
         weight_q += w_mean
 

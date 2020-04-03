@@ -134,11 +134,14 @@ class STEQuantizer(torch.autograd.Function):
 
 class STEQuantizer_weight(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, input, scale, zero_point, dequantize, inplace):
+    def forward(ctx, input, scale, zero_point, dequantize, inplace, nbit, restrict_range):
         if inplace:
-            ctx.mark_dirty(input)
-
+            ctx.mark_dirty(input) 
         output = linear_quantize(input, scale, zero_point)
+        if restrict_range is False:
+            if len(torch.unique(output)) == 2**nbit + 1:
+                n = (2 ** nbit) / 2
+                output = output.clamp(-n, n-1)
         # print(f'quantized INT = {len(torch.unique(output))}')
         if dequantize:
             output = linear_dequantize(output, scale, zero_point)  

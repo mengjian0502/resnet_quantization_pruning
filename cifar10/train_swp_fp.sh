@@ -22,17 +22,19 @@ group_ch=16
 # add more labels as additional info into the saving path
 label_info=
 
+pretrained_model="./save/resnet20/decay0.0002_fullprecision_multiplecheckpoints_fflf/model_best.pth.tar"
+
 $PYTHON -W ignore main.py --dataset ${dataset} \
     --data_path ./dataset/   \
-    --arch ${model} --save_path ./save/resnet20/decay0.0002_w4_a4_swpFalse \
+    --arch ${model} --save_path ./save/resnet20/quant_scheme/decay0.0002_w4_a4_swpFalse_even_level_asymm_resumeFalse \
     --epochs ${epochs}  --learning_rate  0.1 \
     --optimizer ${optimizer} \
     --schedule 60 120   --gammas 0.1 0.1\
     --batch_size ${batch_size} --workers 4 --ngpu 1 --gpu_id 2 \
     --print_freq 100 --decay 0.0002 \
     --lamda 0.0007   --ratio 0.7 \
-    #--clp \
-    #--a_lambda 0.01 \
+    --clp \
+    --a_lambda 0.01 \
     # --resume ${pretrained_model} \
     # --fine_tune \
     # --swp 

@@ -17,10 +17,10 @@ dataset=cifar10
 epochs=200
 batch_size=128
 optimizer=SGD
-group_ch=16
+group_ch=1
 
-ub=0.008
-lb=0.001
+ub=0.000125
+lb=0.000125
 diff=0.001
 
 # add more labels as additional info into the saving path
