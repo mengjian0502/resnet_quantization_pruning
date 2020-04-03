@@ -69,6 +69,8 @@ class zero_skp_quant(torch.autograd.Function):
         self.group_ch = group_ch
     
     def forward(self, input):
+        self.save_for_backward(input)
+        
         cout = input.size(0)
         cin = input.size(1)
         kh = input.size(2)
