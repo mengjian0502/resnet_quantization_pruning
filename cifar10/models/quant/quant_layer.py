@@ -207,7 +207,7 @@ class zero_grp_skp_quant(nn.Conv2d):
     def forward(self, input):
         weight = self.weight
 
-        weight_q = zero_skp_quant(nbit=4, th=1e-3, group_ch=16)
+        weight_q = zero_skp_quant(nbit=4, th=1e-3, group_ch=16)(weight)
         output = F.conv2d(input, weight_q, self.bias, self.stride, self.padding, self.dilation, self.groups)
         
         return output
