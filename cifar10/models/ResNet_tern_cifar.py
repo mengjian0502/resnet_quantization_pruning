@@ -363,12 +363,14 @@ class ResNetBasicblock(nn.Module):
     # self.conv_a = quanConv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)  # aaai ternary
     # self.conv_a = int_conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)  # quantization
     self.conv_a = zero_grp_skp_quant(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)  # quantization  
+    # self.conv_a = clamp_conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)  # quantization  
     # self.conv_a = nn.Conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)   # full precision
     self.bn_a = nn.BatchNorm2d(planes)
     self.relu1 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
     # self.conv_b = quanConv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # aaai ternary
     # self.conv_b = int_conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # quantization
     self.conv_b = zero_grp_skp_quant(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # quantization
+    # self.conv_b = clamp_conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # quantization
     # self.conv_b = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False) # full precision
     self.bn_b = nn.BatchNorm2d(planes)
     self.relu2 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits

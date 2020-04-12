@@ -26,7 +26,7 @@ pretrained_model="./save/resnet20/decay0.0002_fullprecision_multiplecheckpoints_
 
 $PYTHON -W ignore main.py --dataset ${dataset} \
     --data_path ./dataset/   \
-    --arch ${model} --save_path ./save/resnet20/quant_scheme/decay0.0002_w4_a4_swpFalse_even_level_zero_skip_resumeFalse \
+    --arch ${model} --save_path ./save/resnet20/quant_scheme/decay0.0002_w4_a4_swpFalse_even_level_symm_resumeFalse \
     --epochs ${epochs}  --learning_rate  0.1 \
     --optimizer ${optimizer} \
     --schedule 60 120   --gammas 0.1 0.1\

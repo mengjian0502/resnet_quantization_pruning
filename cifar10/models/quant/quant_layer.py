@@ -62,22 +62,25 @@ class sawb_ternFunc(torch.autograd.Function):
         return grad_input
 
 class zero_skp_quant(torch.autograd.Function):
-    def __init__(self, nbit, th, group_ch):
+    def __init__(self, nbit, coef, group_ch):
         super(zero_skp_quant, self).__init__()
         self.nbit = nbit
-        self.th = th
+        self.coef = coef
         self.group_ch = group_ch
     
     def forward(self, input):
         self.save_for_backward(input)
+        z_typical = {'4bit': [0.077, 1.013], '8bit':[0.027, 1.114]}                 # c1, c2 from the typical distribution (4bit)
+
+        alpha_w_original = get_scale(input, z_typical[f'{int(self.nbit)}bit'])
+        interval = 2*alpha_w_original / (2**self.nbit - 1) / 2
+        self.th = self.coef * interval
 
         cout = input.size(0)
         cin = input.size(1)
         kh = input.size(2)
         kw = input.size(3)
         num_group = (cout * cin) // self.group_ch
-
-        z_typical = {'4bit': [0.077, 1.013], '8bit':[0.027, 1.114]}                 # c1, c2 from the typical distribution (4bit)
 
         input_sparse = torch.zeros_like(input)
         input_sparse[input.abs().gt(self.th)] = input[input.abs().gt(self.th)]
@@ -147,11 +150,11 @@ class clamp_conv2d(nn.Conv2d):
 
         weight_q = 2 * weight_th - q_scale + w_mean
 
-        q_levels = torch.unique(weight_q)
-        idx = np.argsort(abs(q_levels.cpu().numpy()))
+        # q_levels = torch.unique(weight_q)
+        # idx = np.argsort(abs(q_levels.cpu().numpy()))
         
-        weight_q[weight_q==q_levels[7]] = 0.
-        weight_q[weight_q==q_levels[8]] = 0.
+        # weight_q[weight_q==q_levels[7]] = 0.
+        # weight_q[weight_q==q_levels[8]] = 0.
 
         output = F.conv2d(input, weight_q, self.bias, self.stride, self.padding, self.dilation, self.groups)
         
@@ -211,7 +214,7 @@ class zero_grp_skp_quant(nn.Conv2d):
     def forward(self, input):
         weight = self.weight
 
-        weight_q = zero_skp_quant(nbit=4, th=1e-3, group_ch=16)(weight)
+        weight_q = zero_skp_quant(nbit=4, coef=0.2, group_ch=16)(weight)
         output = F.conv2d(input, weight_q, self.bias, self.stride, self.padding, self.dilation, self.groups)
         
         return output
