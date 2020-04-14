@@ -7,7 +7,9 @@ from collections import OrderedDict
 from torch.nn import init
 from .quant import int_conv2d, ClippedReLU
 
-__all__ = ['ResNet', 'resnet18b_ff_lf_w4_a4_tex1']
+__all__ = ['ResNet', 'resnet18b_ff_lf_w4_a4_tex1', 'resnet18b_ff_lf_tex1', 
+            'resnet18b_fq_lq_tex1', 'resnet34b_ff_lf_tex1', 'resnet34b_fq_lq_tex1',
+            'resnet50b_ff_lf_tex1', 'resnet50b_fq_lq_tex1', 'resnet101b_ff_lf_tex1', 'resnet101b_fq_lq_tex1']
 
 
 model_urls = {
@@ -301,12 +303,7 @@ def resnet18b_ff_lf_tex1(num_classes=1000):
     pretrain_dict = model_zoo.load_url(model_urls['resnet18'])
     state_tmp.update(state_dict_update(pretrain_dict))
 
-    #model.load_state_dict(model_zoo.load_url(model_urls['resnet18']))
     model.load_state_dict(state_tmp)
-    return model
-
-def resnet18b_w4_a4_tex1(num_classes=1000):
-    model = ResNet(BasicBlock, [2, 2, 2, 2], fp_fl=True, fp_ll=True)
     return model
 
 def resnet18b_ff_lf_w4_a4_tex1(num_classes=1000):
