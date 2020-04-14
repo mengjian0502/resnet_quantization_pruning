@@ -1,7 +1,3 @@
-"""
-quantization
-"""
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -88,31 +84,6 @@ def symmetric_linear_quantization_params(num_bits, saturation_val, restrict_qran
         return scale.item(), zero_point.item()
     return scale, zero_point
 
-
-
-def get_scale(input, z):
-    # c1, c2 = 3.212, 2.178         # 2bit from typical distribution regression
-    c1, c2 = 1/z[0], z[1]/z[0]
-
-    std = input.std()
-    mean = input.abs().mean()
-    
-    q_scale = c1 * std - c2 * mean # change the plus sign to minus sign for the correct version of sawb alpha_w
-    
-    return q_scale 
-
-def get_scale_reg2(input):
-    z = np.array([0.02103731, -0.08963325, 1.32700046])   # 4bit clamp
-    
-    std = input.std()
-    mean = input.abs().mean()
-    
-    a1, a2, a3 = z[0], z[1]*mean, mean*(z[2]*mean - std)
-    
-    alpha_w = np.roots([a1, a2, a3])
-    
-    return np.real(alpha_w)[0]
-
 class STEQuantizer(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input, scale, zero_point, dequantize, inplace):
@@ -132,26 +103,19 @@ class STEQuantizer(torch.autograd.Function):
         
         return grad_output, None, None, None, None
 
-class STEQuantizer_weight(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, input, scale, zero_point, dequantize, inplace, nbit, restrict_range):
-        if inplace:
-            ctx.mark_dirty(input) 
-        output = linear_quantize(input, scale, zero_point)
-        if restrict_range is False:
-            if len(torch.unique(output)) == 2**nbit + 1:
-                n = (2 ** nbit) / 2
-                output = output.clamp(-n, n-1)
-        # print(f'quantized INT = {len(torch.unique(output))}')
-        if dequantize:
-            output = linear_dequantize(output, scale, zero_point)  
-        return output
-    
-    @staticmethod
-    def backward(ctx, grad_output):
-        """
-        Straight Through Estimator
-        """
+class ClippedReLU(nn.Module):
+    def __init__(self, num_bits, alpha=8.0, inplace=False, dequantize=True):
+        super(ClippedReLU, self).__init__()
+        self.alpha = nn.Parameter(torch.Tensor([alpha]))     
+        self.num_bits = num_bits
+        self.inplace = inplace
+        self.dequantize = dequantize
         
-        return grad_output, None, None, None, None
-
+    def forward(self, input):
+        input = F.relu(input)
+        input = torch.where(input < self.alpha, input, self.alpha)
+        
+        with torch.no_grad():
+            scale, zero_point = quantizer(self.num_bits, 0, self.alpha)
+        input = STEQuantizer.apply(input, scale, zero_point, self.dequantize, self.inplace)
+        return input

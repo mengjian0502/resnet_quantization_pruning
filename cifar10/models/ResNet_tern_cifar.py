@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import init
-from .quant import clamp_conv2d, ClippedReLU, conv2d_Q_fn, PACT_conv2d, int_conv2d
+from .quant import clamp_conv2d, ClippedReLU, conv2d_Q_fn, PACT_conv2d, int_conv2d, zero_grp_skp_quant
 import math
 
 class _pruneFunc_mask(torch.autograd.Function):
@@ -361,12 +361,16 @@ class ResNetBasicblock(nn.Module):
   def __init__(self, inplanes, planes, stride=1, downsample=None):
     super(ResNetBasicblock, self).__init__() 
     # self.conv_a = quanConv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)  # aaai ternary
-    self.conv_a = int_conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)  # quantization  
+    # self.conv_a = int_conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)  # quantization
+    self.conv_a = zero_grp_skp_quant(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)  # quantization  
+    # self.conv_a = clamp_conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)  # quantization  
     # self.conv_a = nn.Conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)   # full precision
     self.bn_a = nn.BatchNorm2d(planes)
     self.relu1 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
     # self.conv_b = quanConv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # aaai ternary
-    self.conv_b = int_conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # quantization
+    # self.conv_b = int_conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # quantization
+    self.conv_b = zero_grp_skp_quant(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # quantization
+    # self.conv_b = clamp_conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # quantization
     # self.conv_b = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False) # full precision
     self.bn_b = nn.BatchNorm2d(planes)
     self.relu2 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
@@ -439,7 +443,7 @@ class CifarResNet(nn.Module):
     downsample = None
     if stride != 1 or self.inplanes != planes * block.expansion:
       downsample = nn.Sequential(
-        int_conv2d(self.inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=False),
+        zero_grp_skp_quant(self.inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=False),
         nn.BatchNorm2d(planes * block.expansion),
         )
       # downsample = DownsampleA(self.inplanes, planes * block.expansion, stride)
