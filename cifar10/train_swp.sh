@@ -12,7 +12,7 @@ if [ ! -d "$DIRECTORY" ]; then
 fi
 
 ############ Configurations ###############
-model=tern_resnet20
+model=tern_resnet32
 dataset=cifar10
 epochs=200
 batch_size=128
