@@ -32,7 +32,7 @@ for i in $(seq ${lb} ${diff} ${ub})
 do
     $PYTHON -W ignore main.py --dataset ${dataset} \
         --data_path ./dataset/   \
-        --arch ${model} --save_path ./save/resnet20/quant_scheme/even_level_zero_skip_grp_sweep/ch${group_ch}/decay0.0005_lambda${i}_w4_a4_swpTrue_resumeTrue_even_level_zero_skip_qsc_coef0.01_gradclpTrue \
+        --arch ${model} --save_path ./save/resnet20/quant_scheme/zero_skipquant/ch${group_ch}/decay0.0005_lambda${i}_w4_a4_swpTrue_resumeTrue_zero_skip_qsc \
         --epochs ${epochs}  --learning_rate  0.01 \
         --optimizer ${optimizer} \
         --schedule 80 120 160   --gammas 0.1 0.1 0.5 \
