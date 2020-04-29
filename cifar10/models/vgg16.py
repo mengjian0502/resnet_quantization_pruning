@@ -7,7 +7,7 @@ import math
 import torch.nn as nn
 import torchvision.transforms as transforms
 
-__all__ = ['VGG16', 'VGG16BN', 'VGG19', 'VGG19BN', 'vggbn_cifar']
+__all__ = ['VGG16', 'VGG16BN', 'VGG19', 'VGG19BN', 'vgg16bn_cifar']
 
 
 def make_layers(cfg, batch_norm=False):

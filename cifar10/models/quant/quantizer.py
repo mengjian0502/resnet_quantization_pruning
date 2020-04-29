@@ -101,6 +101,16 @@ def get_scale(input, z):
     
     return q_scale 
 
+def get_scale_2bit(input):
+    c1, c2 = 3.212, -2.178
+    
+    std = input.std()
+    mean = input.abs().mean()
+    
+    q_scale = c1 * std + c2 * mean
+    
+    return q_scale 
+
 def get_scale_reg2(input):
     z = np.array([0.02103731, -0.08963325, 1.32700046])   # 4bit clamp
     
