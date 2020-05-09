@@ -17,10 +17,9 @@ dataset=cifar10
 epochs=200
 batch_size=128
 optimizer=SGD
-group_ch=8
 
-ub=0.004
-lb=0.004
+ub=0.007
+lb=0.005
 diff=0.001
 
 # add more labels as additional info into the saving path
@@ -30,9 +29,9 @@ pretrained_model="./save/resnet20/decay0.0002_fullprecision_multiplecheckpoints_
 
 for i in $(seq ${lb} ${diff} ${ub})
 do
-    $PYTHON -W ignore main.py --dataset ${dataset} \
+    $PYTHON -W ignore main_filter.py --dataset ${dataset} \
         --data_path ./dataset/   \
-        --arch ${model} --save_path ./save/resnet20/grp_sweep/ch${group_ch}/decay0.0005_lambda${i}_w4_a4_swpTrue_resumeTrue_qsc_symm_g03 \
+        --arch ${model} --save_path ./save/resnet20/filter_wise_prune/ch${group_ch}/decay0.0005_lambda${i}_w4_a4_swpTrue_resumeTrue_qsc_symm \
         --epochs ${epochs}  --learning_rate  0.01 \
         --optimizer ${optimizer} \
         --schedule 80 120 160   --gammas 0.1 0.1 0.5 \
@@ -43,6 +42,5 @@ do
         --clp \
         --a_lambda 0.01 \
         --fine_tune \
-        --swp \
-	    --group_ch ${group_ch}
+        --swp
 done

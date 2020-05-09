@@ -3,6 +3,7 @@ from .ResNet_tern_cifar import tern_resnet20, tern_resnet32, tern_resnet44, tern
 from .ResNet_cifar_vanilla import resnet20, resnet32, resnet44, resnet56, resnet110
 from .preresnet import preresnet20
 from .vgg16 import vgg16bn_cifar
+from .vgg import vgg7
 
 #### Models for ImageNet ############
 from .alexnet_vanilla import alexnet_vanilla
