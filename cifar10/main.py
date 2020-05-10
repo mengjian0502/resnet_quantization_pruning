@@ -22,8 +22,6 @@ import csv
 # from torch.utils.tensorboard import SummaryWriter
 from tensorboardX import SummaryWriter
 import models
-from models.ResNet_tern_cifar import filterternConv2d, pruneLinear, quanConv2d, _quanFunc
-from models.ResNet_cifar_vanilla import filterpruneConv2d, pLinear
 from logger import Logger
 # import yellowFin tuner
 # sys.path.append("./tuner_utils")

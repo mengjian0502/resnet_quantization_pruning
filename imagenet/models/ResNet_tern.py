@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import torch
 from collections import OrderedDict
 from torch.nn import init
-from .quant import int_conv2d, ClippedReLU
+from .quant import int_conv2d, ClippedReLU, sawb_w2_Conv2d
 
 __all__ = ['ResNet', 'resnet18b_ff_lf_w4_a4_tex1', 'resnet18b_ff_lf_tex1', 
             'resnet18b_fq_lq_tex1', 'resnet34b_ff_lf_tex1', 'resnet34b_fq_lq_tex1',
@@ -126,7 +126,7 @@ def conv3x3_bl(in_planes, out_planes, stride=1):
                      padding=1, bias=False)
 
 def conv3x3_quan(in_planes, out_planes, stride=1):
-    return int_conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
+    return sawb_w2_Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
                      padding=1, bias=False)
 
 class BasicBlock(nn.Module):
@@ -137,14 +137,15 @@ class BasicBlock(nn.Module):
         self.conv1 = conv3x3_quan(inplanes, planes, stride)
         self.bn1 = nn.BatchNorm2d(planes)
         # self.relu = nn.ReLU(inplace=True)
-        self.relu1 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
+        self.relu1 = ClippedReLU(num_bits=2, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
+        
         self.conv2 = conv3x3_quan(planes, planes)
         self.bn2 = nn.BatchNorm2d(planes)
-        self.relu2 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
+        # self.relu2 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
+        self.relu2 = nn.ReLU(inplace=True)
+        
         self.downsample = downsample
         self.stride = stride
-        self.relu2 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
-        # self.relu2 = nn.ReLU(inplace=True)
 
     def forward(self, x):
         residual = x

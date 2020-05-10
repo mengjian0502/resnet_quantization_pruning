@@ -5,342 +5,6 @@ from torch.nn import init
 from .quant import clamp_conv2d, ClippedReLU, conv2d_Q_fn, PACT_conv2d, int_conv2d, zero_grp_skp_quant, sawb_w2_Conv2d
 import math
 
-class _pruneFunc_mask(torch.autograd.Function):
-
-    def __init__(self, tfactor):
-        super(_pruneFunc_mask,self).__init__()
-        self.tFactor = tfactor
-
-    def forward(self, input, weight_zero, weight_keep):
-        self.save_for_backward(input)
-        input_keep = input[weight_keep.tolist(), :, :, :]
-        max_w = input_keep.abs().max()
-        self.th = self.tFactor*max_w #threshold
-
-        self.W = input_keep[input_keep.ge(self.th)+input_keep.le(-self.th)].abs().mean()
-
-        output = input.clone().zero_()
-
-        output[input.ge(self.th)] = self.W
-        output[input.lt(-self.th)] = -self.W
-
-        output[weight_zero.tolist(), :, :, :] = 0.0
-
-        return output
-
-    def backward(self, grad_output):
-        # saved tensors - tuple of tensors with one element
-        input, = self.saved_tensors
-        grad_input = grad_output.clone()
-        # input, = self.saved_tensors
-        grad_input[input.ge(1)] = 0
-        grad_input[input.le(-1)] = 0
-        #grad_input[weight_mask] = 0
-        return grad_input, None, None
-
-
-class _filterternFunc(torch.autograd.Function):
-
-    def __init__(self, tfactor):
-        super(_filterternFunc,self).__init__()
-        self.tFactor = tfactor
-
-    def forward(self, input):
-        self.save_for_backward(input)
-       
-        # set the norm-rank x ration filters to zero
-
-        weight_copy = input.data.abs().clone()
-        L1_norm = torch.sum(weight_copy,(1,2,3))
-        _,arg_max = torch.sort(L1_norm, descending=True)
-        num_keep = int(weight_copy.shape[0] * 0.7)
-        w_keep = arg_max[:num_keep]
-        w_zeros = arg_max[num_keep:]
-        weight_copy[w_zeros.tolist(), :, :, :] = 0.0
-
-        input_keep = weight_copy[w_keep.tolist(), :, :, :]
-
-        max_w = input_keep.abs().max()
-        # self.th = 0.0001
-        self.th = self.tFactor*max_w #threshold
-
-        self.W = input_keep[input_keep.ge(self.th)+input_keep.le(-self.th)].abs().mean()
-        weight_copy[weight_copy.ge(self.th)] = self.W
-        weight_copy[weight_copy.lt(-self.th)] = -self.W
- 
-        return weight_copy
-
-    def backward(self, grad_output):
-        # saved tensors - tuple of tensors with one element
-        grad_input = grad_output.clone()
-        input, = self.saved_tensors
-        grad_input[input.ge(1)] = 0
-        grad_input[input.le(-1)] = 0
-        return grad_input, None
-
-class _quanFunc_mask(torch.autograd.Function):
-
-    def __init__(self, tfactor):
-        super(_quanFunc_mask,self).__init__()
-        self.tFactor = tfactor
-
-    def forward(self, input, weight_idx):
-        self.save_for_backward(input)
-        input_keep = input[weight_idx.tolist(), :, :, :]
-        max_w = input_keep.abs().max()
-        self.th = self.tFactor*max_w #threshold
-
-        output = input.clone().zero_()
-        self.W = input_keep[input_keep.ge(self.th)+input_keep.le(-self.th)].abs().mean()
-        output[input.ge(self.th)] = self.W
-        output[input.lt(-self.th)] = -self.W
-
-        return output
-
-    def backward(self, grad_output):
-        # saved tensors - tuple of tensors with one element
-        input, = self.saved_tensors
-        grad_input = grad_output.clone()
-        # input, = self.saved_tensors
-        grad_input[input.ge(1)] = 0
-        grad_input[input.le(-1)] = 0
-        #grad_input[weight_mask] = 0
-        return grad_input, None
-
-
-class _quanFunc(torch.autograd.Function):
-
-    def __init__(self, tfactor):
-        super(_quanFunc,self).__init__()
-        self.tFactor = tfactor
-
-    def forward(self, input):
-        self.save_for_backward(input)
-        # mean_w = input.abs().mean()
-        max_w = input.abs().max()
-        # self.th = 0.0001
-        self.th = self.tFactor*max_w #threshold
-
-        # self.th = self.tFactor*max_w #threshold
-        output = input.clone().zero_()
-        self.W = input[input.ge(self.th)+input.le(-self.th)].abs().mean()
-        output[input.ge(self.th)] = self.W
-        output[input.lt(-self.th)] = -self.W
-
-        return output
-
-    def backward(self, grad_output):
-        # saved tensors - tuple of tensors with one element
-        grad_input = grad_output.clone()
-        input, = self.saved_tensors
-        grad_input[input.ge(1)] = 0
-        grad_input[input.le(-1)] = 0
-        return grad_input
-
-
-class quanConv2d(nn.Conv2d):
-
-    def forward(self, input):
-        tfactor_list = [0.05]
-        weight = _quanFunc(tfactor=tfactor_list[0])(self.weight)
-        output = F.conv2d(input, weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
-        
-        return output 
-
-class filterternConv2d(nn.Conv2d):
-    def __init__(self, in_channels, out_channels, kernel_size,
-                 stride=1, padding=0, dilation=1, groups=1, bias=True):
-        super(filterternConv2d, self).__init__(in_channels, out_channels, kernel_size,
-                                          stride=stride, padding=padding, dilation=dilation,
-                                          groups=groups, bias=bias)
-        self.get_weight_idx()
-
-    def forward(self, input):
-        tfactor_list = [0.05]
-        # using swp to prune
-        weight = _quanFunc_mask(tfactor=tfactor_list[0])(self.weight, self.w_idx)
-        # directly prune
-        # weight = _pruneFunc_mask(tfactor=tfactor_list[0])(self.weight, self.w_zero, self.w_idx)
-
-        # weight = _quanFunc(tfactor=tfactor_list[0])(self.weight)
-        output = F.conv2d(input, weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
-        
-        return output 
-
-    def get_weight_idx(self):
-        '''
-        Filter wise norm rank purning 
-        This function get the weight mask when load the pretrained model,
-        thus all the weights below the preset threshold will be considered
-        as the pruned weights, and the returned weight index will be used
-        for gradient masking.
-        '''
-        tfactor_list = [0.05]
-
-        weight = _quanFunc(tfactor=tfactor_list[0])(self.weight)
-        weight_copy = weight.data.abs().clone()
-
-        # weight_copy = self.weight.data.abs().clone()
-
-        #L2
-
-        # weight_vec = weight_copy.view(weight_copy.size()[0], -1)
-        # L2_norm = torch.norm(weight_vec, 2, 1)
-        # _,arg_max = torch.sort(L2_norm)
-
-        #L1
-        L1_norm = torch.sum(weight_copy,(1,2,3))
-        _,arg_max = torch.sort(L1_norm, descending=True)
-        out_channels = weight_copy.shape[0]
-        num_keep = int(16 * 0.7) * int(out_channels/16)
-        #num_keep = int(out_channels * 0.9)
-        # print(num_keep)
-        # idx = arg_max[:num_keep]
-        # self.w_idx, _ = idx.sort()
-        self.w_idx = arg_max[:num_keep]
-        self.w_zero = arg_max[num_keep:]
-        return arg_max[num_keep:]
-
-        # self.w_idx = arg_max[:num_keep]
-        # self.w_zero = arg_max[num_keep:]
-        # return arg_max[num_keep:]
-
-
-class _quanLinear_mask(torch.autograd.Function):
-
-    def __init__(self, tfactor):
-        super(_quanLinear_mask,self).__init__()
-        self.tFactor = tfactor
-
-    def forward(self, input, weight_idx):
-        self.save_for_backward(input)
-        # input_keep = input
-        input_keep = input[ :, weight_idx.tolist()]
-        max_w = input_keep.abs().max()
-        self.th = self.tFactor*max_w #threshold
-
-        output = input.clone().zero_()
-        self.W = input_keep[input_keep.ge(self.th)+input_keep.le(-self.th)].abs().mean()
-        output[input.ge(self.th)] = self.W
-        output[input.lt(-self.th)] = -self.W
-
-        return output
-
-    def backward(self, grad_output):
-        # saved tensors - tuple of tensors with one element
-        input, = self.saved_tensors
-        grad_input = grad_output.clone()
-        # input, = self.saved_tensors
-        grad_input[input.ge(1)] = 0
-        grad_input[input.le(-1)] = 0
-        #grad_input[weight_mask] = 0
-        return grad_input, None
-
-class _pruneLinear_mask(torch.autograd.Function):
-
-    def __init__(self, tfactor):
-        super(_pruneLinear_mask,self).__init__()
-        self.tFactor = tfactor
-
-    def forward(self, input, weight_zero, weight_keep):
-        self.save_for_backward(input)
-        # input_keep = input
-        input_keep = input[ :, weight_keep.tolist()]
-        max_w = input_keep.abs().max()
-        self.th = self.tFactor*max_w #threshold
-
-        self.W = input_keep[input_keep.ge(self.th)+input_keep.le(-self.th)].abs().mean()
-
-        output = input.clone().zero_()
-
-        output[input.ge(self.th)] = self.W
-        output[input.lt(-self.th)] = -self.W
-
-        output[:, weight_zero.tolist()]
-
-        return output
-
-    def backward(self, grad_output):
-        # saved tensors - tuple of tensors with one element
-        input, = self.saved_tensors
-        grad_input = grad_output.clone()
-        # input, = self.saved_tensors
-        grad_input[input.ge(1)] = 0
-        grad_input[input.le(-1)] = 0
-        #grad_input[weight_mask] = 0
-        return grad_input, None, None
-
-class quanLinear(nn.Linear):
-
-    def forward(self, input):
-        tfactor_list = [0.05]
-        weight = _quanFunc(tfactor=tfactor_list[0])(self.weight)
-        output = F.linear(input, weight, self.bias)
-
-        return output
-
-class pruneLinear(nn.Linear):
-    def __init__(self, input_features, output_features, bias=True):
-        super(pruneLinear, self).__init__(input_features, output_features)
-        self.input_features = input_features
-        self.output_features = output_features
-
-        self.get_weight_idx()
-
-    def forward(self, input):
-        # See the autograd section for explanation of what happens here.
-        tfactor_list = [0.05]
-
-        #using swp prune
-        weight = _quanLinear_mask(tfactor=tfactor_list[0])(self.weight, self.w_idx)
-        # directly prune
-        # weight = _pruneLinear_mask(tfactor=tfactor_list[0])(self.weight, self.w_zero, self.w_idx)
-
-        output = F.linear(input, weight, self.bias)
-
-        return output
-
-
-    def get_weight_idx(self):
-        '''
-        Filter wise norm rank purning 
-        This function get the weight mask when load the pretrained model,
-        thus all the weights below the preset threshold will be considered
-        as the pruned weights, and the returned weight index will be used
-        for gradient masking.
-        '''
-        tfactor_list = [0.05]
-
-        weight = _quanFunc(tfactor=tfactor_list[0])(self.weight)
-        weight_copy = weight.data.abs().clone()
-        # weight_copy = self.weight.data.abs().clone()
-
-        #L2
-
-        # weight_vec = weight_copy.view(weight_copy.size()[0], -1)
-        # L2_norm = torch.norm(weight_vec, 2, 1)
-        # _,arg_max = torch.sort(L2_norm)
-
-        #L1
-        L1_norm = torch.sum(weight_copy,0)
-        
-        _,arg_max = torch.sort(L1_norm,  descending=True)
-        in_channels = weight_copy.shape[1]
-        num_keep = int(16 * 0.7) * int(in_channels/16)
-        #num_keep = int(out_channels * 0.9)
-        # print(num_keep)
-
-        # idx = arg_max[:num_keep]
-        # self.w_idx, _ = idx.sort()
-        self.w_idx = arg_max[:num_keep]
-        self.w_zero = arg_max[num_keep:]
-        return arg_max[num_keep:]
-
-        # self.w_idx = arg_max[:num_keep]
-        # self.w_zero = arg_max[num_keep:]
-
-        # return arg_max[num_keep:]
-
 class DownsampleA(nn.Module):
 
   def __init__(self, nIn, nOut, stride):
@@ -360,16 +24,16 @@ class ResNetBasicblock(nn.Module):
   """
   def __init__(self, inplanes, planes, stride=1, downsample=None):
     super(ResNetBasicblock, self).__init__() 
-    self.conv_a = int_conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)  # quantization
-    # self.conv_a = zero_grp_skp_quant(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)  # quantization  
-    # self.conv_a = nn.Conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)   # full precision
+    # self.conv_a = int_conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)  # quantization
+    self.conv_a = sawb_w2_Conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)  # quantization (SAWB)
     self.bn_a = nn.BatchNorm2d(planes)
-    self.relu1 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
-    self.conv_b = int_conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # quantization
-    # self.conv_b = zero_grp_skp_quant(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # quantization
-    # self.conv_b = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False) # full precision
+    self.relu1 = ClippedReLU(num_bits=2, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
+
+    # self.conv_b = int_conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # quantization
+    self.conv_b = sawb_w2_Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # quantization
     self.bn_b = nn.BatchNorm2d(planes)
-    self.relu2 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
+    # self.relu2 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
+    self.relu2 = nn.ReLU(inplace=True)
     self.downsample = downsample
 
   def forward(self, x):
@@ -377,7 +41,6 @@ class ResNetBasicblock(nn.Module):
 
     basicblock = self.conv_a(x)
     basicblock = self.bn_a(basicblock)
-    # basicblock = F.relu(basicblock, inplace=True)
     basicblock = self.relu1(basicblock)
 
     basicblock = self.conv_b(basicblock)
@@ -439,7 +102,7 @@ class CifarResNet(nn.Module):
     downsample = None
     if stride != 1 or self.inplanes != planes * block.expansion:
       downsample = nn.Sequential(
-        int_conv2d(self.inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=False),
+        nn.Conv2d(self.inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=False),
         nn.BatchNorm2d(planes * block.expansion),
         )
       # downsample = DownsampleA(self.inplanes, planes * block.expansion, stride)

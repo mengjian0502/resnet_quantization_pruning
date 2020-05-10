@@ -20,15 +20,14 @@ optimizer=SGD
 # add more labels as additional info into the saving path
 label_info=
 
-CUDA_VISIBILE_DEVICES=0,2,3 $PYTHON -W ignore main.py --dataset ${dataset} \
+$PYTHON -W ignore main.py --dataset ${dataset} \
     --data_path ${imagenet_path}   \
-    --arch ${model} --save_path ./save/resnet18/sgd/resnet18_w4_a4_swpFalse_symm \
+    --arch ${model} --save_path ./save/resnet18/sgd/resnet18_w2_a2_sawb_2bit \
     --epochs ${epochs} --learning_rate 0.1 \
     --optimizer ${optimizer} \
     --schedule 30 60 85 95  --gammas 0.1 0.1 0.1 0.1 \
     --batch_size ${batch_size} --workers 16 --ngpu 3 \
     --print_freq 1000  --decay 0.0001 \
-    --lamda 0.00025   --ratio 0.7  \
     --clp \
     --a_lambda 0.01 \
     # --swp \
