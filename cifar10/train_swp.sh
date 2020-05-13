@@ -19,8 +19,8 @@ batch_size=128
 optimizer=SGD
 group_ch=8
 
-ub=0.004
-lb=0.004
+ub=0.001
+lb=0.001
 diff=0.001
 
 # add more labels as additional info into the saving path

@@ -218,9 +218,7 @@ class int_conv2d(nn.Conv2d):
         w_mean = self.weight.mean()
         weight_c = self.weight - w_mean
 
-        weight_q = int_quant_func(nbit=4, restrictRange=True)(weight_c)
-        
-        weight_q += w_mean
+        weight_q = int_quant_func(nbit=8, restrictRange=True)(weight_c)
 
         output = F.conv2d(input, weight_q, self.bias, self.stride, self.padding, self.dilation, self.groups)
         return output
