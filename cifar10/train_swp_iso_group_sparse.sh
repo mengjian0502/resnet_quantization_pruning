@@ -14,34 +14,41 @@ fi
 ############ Configurations ###############
 model=tern_resnet20
 dataset=cifar10
-epochs=200
+epochs=2
 batch_size=128
 optimizer=SGD
 group_ch=16
 
-ub=0.005
+# coef=0.05
+# TD_alpha_final=1.0
+# TD_alpha=1.0
+
+wd=0.0005
+a_lambda=0.01
+
+ub=0.001
 lb=0.001
 diff=0.001
 
-# add more labels as additional info into the saving path
-label_info=
-
 pretrained_model="./save/resnet20/decay0.0002_fullprecision_multiplecheckpoints_fflf/model_best.pth.tar"
+eval_model="./save/resnet20/iso_group_sparsity/ch16/skp_group8_4bit/decay0.0005_lambda0.001_alambda0.01_w4_a4_swpTrue_resumeTrue_qsc4bit_grp8_tmp/checkpoint.pth.tar"
 
 for i in $(seq ${lb} ${diff} ${ub})
 do
     $PYTHON -W ignore main_iso_group_sparse.py --dataset ${dataset} \
         --data_path ./dataset/   \
-        --arch ${model} --save_path ./save/resnet20/iso_group_sparsity/ch${group_ch}/decay0.0005_lambda${i}_w8_a8_swpTrue_resumeTrue_qsc_symm_grp4 \
+        --arch ${model} --save_path ./save/resnet20/iso_group_sparsity/ch${group_ch}/skp_group8_4bit/decay${wd}_lambda${i}_alambda${a_lambda}_w4_a4_swpTrue_resumeTrue_qsc4bit_grp8_eval \
         --epochs ${epochs}  --learning_rate  0.01 \
         --optimizer ${optimizer} \
         --schedule 80 120 160   --gammas 0.1 0.1 0.5 \
         --batch_size ${batch_size} --workers 4 --ngpu 1 --gpu_id 2 \
-        --print_freq 100 --decay 0.0005 \
+        --print_freq 100 --decay ${wd} \
         --lamda ${i}   --ratio 0.7 \
-        --resume ${pretrained_model} \
+        --resume ${eval_model} \
         --clp \
-        --a_lambda 0.01 \
+        --a_lambda ${a_lambda} \
         --fine_tune \
-        --swp
+        --group_ch ${group_ch} \
+        --swp \
+        --evaluate 
 done

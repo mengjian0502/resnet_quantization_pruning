@@ -22,19 +22,17 @@ class ResNetBasicblock(nn.Module):
   """
   RexNet basicblock (https://github.com/facebook/fb.resnet.torch/blob/master/models/resnet.lua)
   """
-  def __init__(self, inplanes, planes, stride=1, downsample=None):
+  def __init__(self, inplanes, planes, stride=1, downsample=None, wbit=2, abit=2, coef=0.05, prob=0.0, skp_group=8):
     super(ResNetBasicblock, self).__init__() 
-    self.conv_a = int_conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)  # quantization
-    # self.conv_a = sawb_w2_Conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)  # quantization (SAWB)
-    # self.conv_a = zero_grp_skp_quant(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
+    self.conv_a = zero_grp_skp_quant(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False, 
+                                    nbit=wbit, coef=coef, prob=prob, skp_group=skp_group)
     self.bn_a = nn.BatchNorm2d(planes)
-    self.relu1 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
+    self.relu1 = ClippedReLU(num_bits=abit, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
 
-    self.conv_b = int_conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # quantization
-    # self.conv_b = sawb_w2_Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # quantization
-    # self.conv_b = zero_grp_skp_quant(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)
+    self.conv_b = zero_grp_skp_quant(planes, planes, kernel_size=3, stride=1, padding=1, bias=False,
+                                    nbit=wbit, coef=coef, prob=prob, skp_group=skp_group)
     self.bn_b = nn.BatchNorm2d(planes)
-    self.relu2 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
+    self.relu2 = ClippedReLU(num_bits=2, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
     self.downsample = downsample
 
   def forward(self, x):
@@ -58,7 +56,7 @@ class CifarResNet(nn.Module):
   ResNet optimized for the Cifar dataset, as specified in
   https://arxiv.org/abs/1512.03385.pdf
   """
-  def __init__(self, block, depth, num_classes):
+  def __init__(self, block, depth, num_classes, wbit=2, abit=2, coef=0.05, prob=0.0, skp_group=8):
     """ Constructor
     Args:
       depth: number of layers.
@@ -78,9 +76,9 @@ class CifarResNet(nn.Module):
     self.bn_1 = nn.BatchNorm2d(16)
 
     self.inplanes = 16
-    self.stage_1 = self._make_layer(block, 16, layer_blocks, 1)
-    self.stage_2 = self._make_layer(block, 32, layer_blocks, 2)
-    self.stage_3 = self._make_layer(block, 64, layer_blocks, 2)
+    self.stage_1 = self._make_layer(block, 16, layer_blocks, 1, wbit=wbit, abit=abit, coef=coef, prob=prob, skp_group=skp_group)
+    self.stage_2 = self._make_layer(block, 32, layer_blocks, 2, wbit=wbit, abit=abit, coef=coef, prob=prob, skp_group=skp_group)
+    self.stage_3 = self._make_layer(block, 64, layer_blocks, 2, wbit=wbit, abit=abit, coef=coef, prob=prob, skp_group=skp_group)
     self.avgpool = nn.AvgPool2d(8)
     self.classifier = nn.Linear(64*block.expansion, num_classes)
  
@@ -96,20 +94,19 @@ class CifarResNet(nn.Module):
         init.kaiming_normal_(m.weight)
         m.bias.data.zero_()
 
-  def _make_layer(self, block, planes, blocks, stride=1):
+  def _make_layer(self, block, planes, blocks, stride=1, wbit=2, abit=2, coef=0.05, prob=0.0, skp_group=8):
     downsample = None
     if stride != 1 or self.inplanes != planes * block.expansion:
       downsample = nn.Sequential(
-        int_conv2d(self.inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=False, nbit=4),
+        int_conv2d(self.inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=False),
         nn.BatchNorm2d(planes * block.expansion),
         )
-      # downsample = DownsampleA(self.inplanes, planes * block.expansion, stride)
 
     layers = []
-    layers.append(block(self.inplanes, planes, stride, downsample))
+    layers.append(block(self.inplanes, planes, stride, downsample, wbit=wbit, abit=abit, coef=coef, prob=prob, skp_group=skp_group))
     self.inplanes = planes * block.expansion
     for i in range(1, blocks):
-      layers.append(block(self.inplanes, planes))
+      layers.append(block(self.inplanes, planes, wbit=wbit, abit=abit, coef=coef, prob=prob, skp_group=skp_group))
 
     return nn.Sequential(*layers)
 
@@ -124,12 +121,12 @@ class CifarResNet(nn.Module):
     return self.classifier(x)
 
 
-def tern_resnet20(num_classes=10):
+def tern_resnet20_w2_a2_zeroskp(num_classes=10, wbit=2, abit=2, coef=0.05, prob=0.0, skp_group=4):
   """Constructs a ResNet-20 model for CIFAR-10 (by default)
   Args:
     num_classes (uint): number of classes
   """
-  model = CifarResNet(ResNetBasicblock, 20, num_classes)
+  model = CifarResNet(ResNetBasicblock, 20, num_classes, wbit=wbit, abit=abit, coef=coef, prob=prob, skp_group=skp_group)
   return model
 
 

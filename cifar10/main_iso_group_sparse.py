@@ -111,6 +111,12 @@ parser.add_argument('--layer_begin', type=int, default=1,  help='compress layer 
 parser.add_argument('--layer_end', type=int, default=1,  help='compress layer of model')
 parser.add_argument('--layer_inter', type=int, default=1,  help='compress layer of model')
 
+
+# zero group skip:
+parser.add_argument('--TD_alpha', type=float, default=0.0, help='target probability value for zero group skip')
+parser.add_argument('--TD_alpha_final', type=float, default=0.99, help='final alpha value for targeted dropout')
+parser.add_argument('--ramping_power', type=float, default=5.0, help='power of ramping schedule')
+parser.add_argument('--coef', type=float, default=0.05, help='percentage of the first quantization level')
 ##########################################################################
 
 args = parser.parse_args()
@@ -260,27 +266,12 @@ def main():
     # Init model, criterion, and optimizer
     net = models.__dict__[args.arch](num_classes)
     print_log("=> network :\n {}".format(net), log)
-    # inputsize = torch.tensor((3, 224, 224))
-    # summary(net, inputsize)
-    # net.load_state_dict(torch.load('save/mobilenetv2_1.pth'))
-    #set first and last layer grad to false
-    # if args.fine_tune:
-    #     print('no grad for first and last layer')
-    #     if args.dataset == 'imagenet':
-    #         net.conv1.weight.requires_grad = False
-    #         net.fc.weight.requires_grad = False
-    #     if args.dataset == 'cifar10':
-    #         net.conv_1_3x3.weight.requires_grad = False
-    #         net.classifier.weight.requires_grad = False
-    # inputsize = torch.tensor((1, 28, 28))
-    # summary(net, inputsize)
+
     if args.use_cuda:
         if args.ngpu > 1:
-            # net = torch.nn.DataParallel(net, device_ids=[1,2])
             net = torch.nn.DataParallel(net)
 
     # define loss function (criterion) and optimizer
-
     criterion = torch.nn.CrossEntropyLoss()
 
     if args.optimizer == "SGD":
@@ -380,6 +371,9 @@ def main():
     for epoch in range(args.start_epoch, args.epochs):
         current_learning_rate, current_momentum = adjust_learning_rate(
             optimizer, epoch, args.gammas, args.schedule)
+
+        # TD_alpha = update_alpha(net, epoch)
+
         # Display simulation time
         need_hour, need_mins, need_secs = convert_secs2time(
             epoch_time.avg * (args.epochs - epoch))
@@ -458,6 +452,16 @@ def main():
     filename = os.path.join(args.save_path, 'w_zero_idx')
     np.save(filename, w_zero_idx)
 
+def update_alpha(model, epoch):
+    if args.TD_alpha_final > 0:
+        TD_alpha = args.TD_alpha_final - (((args.epochs - 1 - epoch)/(args.epochs - 1)) ** args.ramping_power) * (args.TD_alpha_final - args.TD_alpha)
+        for m in model.modules():
+            if hasattr(m, 'prob'):
+                m.prob = TD_alpha
+    else:
+        TD_alpha = args.TD_alpha
+    return TD_alpha
+
 def glasso(var, dim=0):
     return var.pow(2).sum(dim=dim).pow(1/2).sum()
 
@@ -531,8 +535,8 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
             lamda = torch.tensor(args.lamda).cuda()
             reg_g1 = torch.tensor(0.).cuda()
             reg_g2 = torch.tensor(0.).cuda()
-            reg_g3 = torch.tensor(0.).cuda()
-            reg_g4 = torch.tensor(0.).cuda()
+            # reg_g3 = torch.tensor(0.).cuda()
+            # reg_g4 = torch.tensor(0.).cuda()
 
             group_ch = args.group_ch
             # == channel-wise defined 
@@ -559,20 +563,20 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
                         w_l = w_l.view(w_l.size(0), w_l.size(1) // group_ch, group_ch, kw, kw)
                         w_l = w_l.view(num_group, group_ch, kw, kw)
 
-                        # reg_g1 += glasso_thre(w_l[:, :group_ch//2, :, :], 1)
-                        # reg_g2 += glasso_thre(w_l[:, group_ch//2:, :, :], 1)
+                        reg_g1 += glasso_thre(w_l[:, :group_ch//2, :, :], 1)
+                        reg_g2 += glasso_thre(w_l[:, group_ch//2:, :, :], 1)
 
-                        reg_g1 += glasso_thre(w_l[:, :group_ch//4, :, :], 1)
-                        reg_g2 += glasso_thre(w_l[:, group_ch//4:2*group_ch//4, :, :], 1)
-                        reg_g3 += glasso_thre(w_l[:, 2*group_ch//4:3*group_ch//4, :, :], 1)
-                        reg_g4 += glasso_thre(w_l[:, 3*group_ch//4:, :, :], 1)
+                        # reg_g1 += glasso_thre(w_l[:, :group_ch//4, :, :], 1)
+                        # reg_g2 += glasso_thre(w_l[:, group_ch//4:2*group_ch//4, :, :], 1)
+                        # reg_g3 += glasso_thre(w_l[:, 2*group_ch//4:3*group_ch//4, :, :], 1)
+                        # reg_g4 += glasso_thre(w_l[:, 3*group_ch//4:, :, :], 1)
 
                         # reg_g1 += glasso_rank(w_l, 1)
                     count += 1
                 # if isinstance(m, nn.Linear):
                 #     w_f = m.weight
                 #     reg_g2 += glasso_thre(w_f, 0)
-            loss += lamda * (reg_g1 + reg_g2 + reg_g3 + reg_g4)
+            loss += lamda * (reg_g1 + reg_g2)
 
         if args.clp:
             reg_alpha = torch.tensor(0.).cuda()
