@@ -17,6 +17,7 @@ from collections import OrderedDict
 from utils_.utils import AverageMeter, RecorderMeter, time_string, convert_secs2time
 from utils_.reorganize_param import reorganize_param
 from utils_.model_summary import summary
+from models.quant import int_conv2d, int_quant_func
 import csv
 
 # from torch.utils.tensorboard import SummaryWriter
@@ -111,6 +112,9 @@ parser.add_argument('--layer_begin', type=int, default=1,  help='compress layer 
 parser.add_argument('--layer_end', type=int, default=1,  help='compress layer of model')
 parser.add_argument('--layer_inter', type=int, default=1,  help='compress layer of model')
 
+
+# mismatch elimination
+parser.add_argument('--mismatch_elim', action='store_true', help='True for mismatch elimination')
 
 # zero group skip:
 parser.add_argument('--TD_alpha', type=float, default=0.0, help='target probability value for zero group skip')
@@ -212,7 +216,6 @@ def main():
             transforms.Normalize(mean, std)
         ])
         test_transform = transforms.Compose([
-            transforms.RandomCrop(32, padding=4),
             transforms.ToTensor(),
             transforms.Normalize(mean, std)
         ])
@@ -312,7 +315,7 @@ def main():
             if not (args.fine_tune):
                 args.start_epoch = checkpoint['epoch']
                 recorder = checkpoint['recorder']
-                optimizer.load_state_dict(checkpoint['optimizer'])
+                # optimizer.load_state_dict(checkpoint['optimizer'])
 
             state_tmp = net.state_dict()
             for k, v in checkpoint['state_dict'].items():
@@ -333,9 +336,7 @@ def main():
                 #state_tmp.update(checkpoint)
 
             net.load_state_dict(state_tmp)
-            #net.load_state_dict(torch.load('save/mobilenetv2_1.pth'))
 
-            # net.load_state_dict(checkpoint['state_dict'])
 
             print_log("=> loaded checkpoint '{}' (epoch {})".format(
                 args.resume, args.start_epoch), log)
@@ -372,7 +373,9 @@ def main():
         current_learning_rate, current_momentum = adjust_learning_rate(
             optimizer, epoch, args.gammas, args.schedule)
 
-        # TD_alpha = update_alpha(net, epoch)
+        if args.mismatch_elim:
+            print_log(f'mismatch elimination...', log)
+            mismatch_elim(net, log)
 
         # Display simulation time
         need_hour, need_mins, need_secs = convert_secs2time(
@@ -429,7 +432,7 @@ def main():
             }
 
         save_checkpoint(checkpoint_state, is_best,
-                        args.save_path, f'checkpoint.pth.tar', log)
+                        args.save_path, 'checkpoint.pth.tar', log)
 
         # measure elapsed time
         epoch_time.update(time.time() - start_time)
@@ -521,7 +524,7 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
         data_time.update(time.time() - end)
         if args.use_cuda:
             # the copy will be asynchronous with respect to the host.
-            target = target.cuda(non_blocking=True)
+            target = target.cuda()
             input = input.cuda()
 
         # compute output
@@ -638,6 +641,71 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
     else:
         return top1.avg, losses.avg
 
+def mismatch_elim(model, log):
+    conv_count = 0
+    for m in model.modules():
+        if isinstance(m, int_conv2d):
+            cout = m.weight.size(0)
+            cin = m.weight.size(1)
+            kh = m.weight.size(2)
+            kw = m.weight.size(3)
+            
+            conv_count +=1
+
+            w_mean = m.weight.mean()
+            weight_c = m.weight - w_mean
+
+            with torch.no_grad():
+                weight_q = int_quant_func(nbit=4, restrictRange=True)(weight_c)
+            
+            w_t = weight_q.reshape(cout, cin // args.group_ch, args.group_ch, kh, kw)
+            num_group = (cout * cin) // args.group_ch
+            w_t = w_t.reshape(num_group, args.group_ch, kh, kw)
+
+            w_g1 = w_t[:, :args.group_ch//2, :, :]
+            w_g2 = w_t[:, args.group_ch//2:, :, :]
+
+            w_g1_2d = w_g1.view(num_group, args.group_ch//2 * kh*kw)
+            w_g2_2d = w_g2.view(num_group, args.group_ch//2 * kh*kw)
+
+            grp_values_g1 = w_g1_2d.norm(p=2, dim=1) 
+            grp_values_g2 = w_g2_2d.norm(p=2, dim=1) 
+
+            mask_g1_1d = torch.ones_like(grp_values_g1)
+            mask_g2_1d = torch.ones_like(grp_values_g2)
+
+            non_zero_idx_g1 = torch.nonzero(grp_values_g1)
+            non_zero_idx_g2 = torch.nonzero(grp_values_g2)
+
+            nonzeros_g1 = len(non_zero_idx_g1)
+            nonzeros_g2 = len(non_zero_idx_g2)
+
+            mismatch = nonzeros_g1 - nonzeros_g2
+
+            print_log(f'Layer: {conv_count} | Mismatch of current layer: {abs(mismatch)}', log)
+            if abs(mismatch) == 7:
+                if mismatch < 0:
+                    sort, idx = torch.sort(grp_values_g2[non_zero_idx_g2].contiguous().view(-1))
+                    zero_idx = idx[:abs(mismatch)]
+                    zero_grp_idx = non_zero_idx_g2[zero_idx]
+            
+                    mask_g2_1d[zero_grp_idx] = 0.
+                elif mismatch > 0:
+                    sort, idx = torch.sort(grp_values_g2[non_zero_idx_g1].contiguous().view(-1))
+                    zero_idx = idx[:abs(mismatch)]
+                    zero_grp_idx = non_zero_idx_g1[zero_idx]
+
+                    mask_g1_1d[zero_grp_idx] = 0.
+
+                mask_g1_2d = mask_g1_1d.view(w_g1_2d.size(0),1).expand(w_g1_2d.size())
+                mask_g2_2d = mask_g2_1d.view(w_g2_2d.size(0),1).expand(w_g2_2d.size()) 
+
+                mask_2d = torch.cat((mask_g1_2d, mask_g2_2d),dim=1)
+                mask_original = mask_2d.clone().resize_as_(m.weight)
+            
+                m.mask_original = mask_original
+
+            print('============================')
 
 def validate(val_loader, model, criterion, log):
     losses = AverageMeter()
@@ -647,11 +715,15 @@ def validate(val_loader, model, criterion, log):
     # switch to evaluate mode
     model.eval()
 
+    if args.evaluate and args.mismatch_elim:
+        print_log(f'mismatch elimination...', log)
+        mismatch_elim(model, log)
+
     with torch.no_grad():
         for i, (input, target) in enumerate(val_loader):
 
             if args.use_cuda:
-                target = target.cuda(non_blocking=True)
+                target = target.cuda()
                 input = input.cuda()
 
             # compute output
@@ -773,121 +845,6 @@ def accuracy_logger(base_dir, epoch, train_accuracy, test_accuracy):
     with open(file_path, 'a') as accuracy_log:
         accuracy_log.write(
             '{epoch}       {train}    {test}\n'.format(**recorder))
-
-
-class Mask:
-    def __init__(self,model):
-        self.model_size = {}
-        self.model_length = {}
-        self.compress_rate = {}
-        self.mat = {}
-        self.model = model
-        self.mask_index = []
-        
-    
-    def get_codebook(self, weight_torch,compress_rate,length):
-        weight_vec = weight_torch.view(length)
-        weight_np = weight_vec.cpu().numpy()
-    
-        weight_abs = np.abs(weight_np)
-        weight_sort = np.sort(weight_abs)
-        
-        threshold = weight_sort[int (length * (1-compress_rate) )]
-        weight_np [weight_np <= -threshold  ] = 1
-        weight_np [weight_np >= threshold  ] = 1
-        weight_np [weight_np !=1  ] = 0
-        
-        print("codebook done")
-        return weight_np
-
-
-    def get_filter_codebook(self, weight_torch,compress_rate,length):
-        codebook = np.ones(length)
-        if len( weight_torch.size())==4:
-            filter_pruned_num = int(weight_torch.size()[0]*(1-compress_rate))
-            weight_vec = weight_torch.view(weight_torch.size()[0],-1)
-            norm2 = torch.norm(weight_vec,2,1)
-            norm2_np = norm2.cpu().numpy()
-            filter_index = norm2_np.argsort()[:filter_pruned_num]
-#            norm1_sort = np.sort(norm1_np)
-#            threshold = norm1_sort[int (weight_torch.size()[0] * (1-compress_rate) )]
-            kernel_length = weight_torch.size()[1] *weight_torch.size()[2] *weight_torch.size()[3]
-            for x in range(0,len(filter_index)):
-                codebook[filter_index[x] *kernel_length : (filter_index[x]+1) *kernel_length] = 0
-
-            print("filter codebook done")
-        else:
-            pass
-        return codebook
-    
-    def convert2tensor(self,x):
-        x = torch.FloatTensor(x)
-        return x
-    
-    def init_length(self):
-        for index, item in enumerate(self.model.parameters()):
-            self.model_size [index] = item.size()
-        
-        for index1 in self.model_size:
-            for index2 in range(0,len(self.model_size[index1])):
-                if index2 ==0:
-                    self.model_length[index1] = self.model_size[index1][0]
-                else:
-                    self.model_length[index1] *= self.model_size[index1][index2]
-                    
-    def init_rate(self, layer_rate):
-        for index, item in enumerate(self.model.parameters()):
-            self.compress_rate [index] = 1
-        for key in range(args.layer_begin, args.layer_end + 1, args.layer_inter):
-            self.compress_rate[key]= layer_rate
-        #different setting for  different architecture
-        if args.arch == 'resnet20' or 'tern_resnet20':
-            last_index = 57
-            skip_list = [54]
-        elif args.arch == 'resnet32':
-            last_index = 93
-        elif args.arch == 'resnet56':
-            last_index = 165
-        elif args.arch == 'resnet110':
-            last_index = 327
-        
-        self.mask_index =  [x for x in range (0,last_index,3)]
-        if args.skip_downsample == 1:
-            for x in skip_list:
-                self.compress_rate[x] = 1
-                self.mask_index.remove(x)
-                print(self.mask_index)
-        else:
-            pass       
-#        self.mask_index =  [x for x in range (0,330,3)]
-        
-    def init_mask(self,layer_rate):
-        self.init_rate(layer_rate)
-        for index, item in enumerate(self.model.parameters()):
-            if(index in self.mask_index):
-                self.mat[index] = self.get_filter_codebook(item.data, self.compress_rate[index],self.model_length[index] )
-                self.mat[index] = self.convert2tensor(self.mat[index])
-                if args.use_cuda:
-                    self.mat[index] = self.mat[index].cuda()
-        print("mask Ready")
-
-    def do_mask(self):
-        for index, item in enumerate(self.model.parameters()):
-            if(index in self.mask_index):
-                a = item.data.view(self.model_length[index])
-                b = a * self.mat[index]
-                item.data = b.view(self.model_size[index])
-        print("mask Done")
-
-    def if_zero(self):
-        for index, item in enumerate(self.model.parameters()):
-            #            if(index in self.mask_index):
-            if index in [x for x in range(args.layer_begin, args.layer_end + 1, args.layer_inter)]:
-                a = item.data.view(self.model_length[index])
-                b = a.cpu().numpy()
-
-                print("layer: %d, number of nonzero weight is %d, zero is %d" % (
-                    index, np.count_nonzero(b), len(b) - np.count_nonzero(b)))
 
 
 if __name__ == '__main__':

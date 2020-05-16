@@ -206,7 +206,6 @@ def main():
             transforms.Normalize(mean, std)
         ])
         test_transform = transforms.Compose([
-            transforms.RandomCrop(32, padding=4),
             transforms.ToTensor(),
             transforms.Normalize(mean, std)
         ])

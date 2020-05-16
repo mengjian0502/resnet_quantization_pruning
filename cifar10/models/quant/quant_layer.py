@@ -9,7 +9,7 @@ import numpy as np
 from torch.autograd import Variable
 from .quantizer import *
 
-__all__ = ['ClippedReLU', 'clamp_conv2d', 'sawb_tern_Conv2d', 'int_conv2d', 'zero_grp_skp_quant', 'sawb_w2_Conv2d']
+# __all__ = ['ClippedReLU', 'clamp_conv2d', 'sawb_tern_Conv2d', 'int_conv2d', 'zero_grp_skp_quant', 'sawb_w2_Conv2d']
 
 class sawb_w2_Func(torch.autograd.Function):
 
@@ -222,6 +222,7 @@ class int_conv2d(nn.Conv2d):
                 stride=stride, padding=padding, dilation=dilation, groups=groups,
                 bias=bias)
         self.nbit = nbit
+        self.mask_original = torch.ones_like(self.weight).cuda()
 
     def forward(self, input):
         w_mean = self.weight.mean()
@@ -229,7 +230,7 @@ class int_conv2d(nn.Conv2d):
 
         weight_q = int_quant_func(nbit=self.nbit, restrictRange=True)(weight_c)
         
-        output = F.conv2d(input, weight_q, self.bias, self.stride, self.padding, self.dilation, self.groups)
+        output = F.conv2d(input, weight_q*self.mask_original, self.bias, self.stride, self.padding, self.dilation, self.groups)
         return output
     
     def extra_repr(self):

@@ -12,7 +12,7 @@ if [ ! -d "$DIRECTORY" ]; then
 fi
 
 ############ Configurations ###############
-model=vgg7_quant
+model=vgg7
 dataset=cifar10
 epochs=200
 batch_size=128
@@ -45,4 +45,5 @@ do
         --fine_tune \
         --swp \
 	    --group_ch ${group_ch}
+        --evalulate
 done
