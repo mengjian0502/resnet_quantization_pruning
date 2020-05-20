@@ -234,7 +234,25 @@ class int_conv2d(nn.Conv2d):
         return output
     
     def extra_repr(self):
-        return super(int_conv2d, self).extra_repr() + 'nbit={}'.format(self.nbit)
+        return super(int_conv2d, self).extra_repr() + ', nbit={}'.format(self.nbit)
+
+
+class int_linear(nn.Linear):
+    def __init__(self, in_channels, out_channels, bias=True, nbit=8):
+        super(int_linear, self).__init__(in_features=in_channels, out_features=out_channels, bias=bias)
+        self.nbit=nbit
+    
+    def forward(self, input):
+        w_mean = self.weight.mean()
+        weight_c = self.weight
+
+        weight_q = int_quant_func(nbit=self.nbit)(weight_c)
+
+        output = F.linear(input, weight_q, self.bias)
+        return output
+
+    def extra_repr(self):
+        return super(int_linear, self).extra_repr() + ', nbit={}'.format(self.nbit)
 
 class sawb_tern_Conv2d(nn.Conv2d):
 

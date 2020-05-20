@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import init
-from .quant import clamp_conv2d, ClippedReLU, conv2d_Q_fn, PACT_conv2d, int_conv2d, zero_grp_skp_quant, sawb_w2_Conv2d
+from .quant import clamp_conv2d, ClippedReLU, int_conv2d, zero_grp_skp_quant, sawb_w2_Conv2d, int_linear
 import math
 
 class DownsampleA(nn.Module):
@@ -76,9 +76,9 @@ class CifarResNet(nn.Module):
     layer_blocks = (depth - 2) // 6
     print ('CifarResNet : Depth : {} , Layers for each block : {}'.format(depth, layer_blocks))
     self.num_classes = num_classes
-    self.conv_1_3x3 = nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1, bias=False)
+    # self.conv_1_3x3 = nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1, bias=False)
+    self.conv_1_3x3 = int_conv2d(3, 16, kernel_size=3, stride=1, padding=1, bias=False, nbit=8)
 
-    # self.conv_1_3x3 = quanConv2d(3, 16, kernel_size=3, stride=1, padding=1, bias=False)
     self.bn_1 = nn.BatchNorm2d(16)
 
     self.inplanes = 16
@@ -86,7 +86,8 @@ class CifarResNet(nn.Module):
     self.stage_2 = self._make_layer(block, 32, layer_blocks, 2)
     self.stage_3 = self._make_layer(block, 64, layer_blocks, 2)
     self.avgpool = nn.AvgPool2d(8)
-    self.classifier = nn.Linear(64*block.expansion, num_classes)
+    # self.classifier = nn.Linear(64*block.expansion, num_classes)
+    self.classifier = int_linear(64*block.expansion, num_classes, nbit=8)
  
     for m in self.modules():
       if isinstance(m, nn.Conv2d):

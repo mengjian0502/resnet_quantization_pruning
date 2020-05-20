@@ -652,15 +652,18 @@ def mismatch_elim(model, log):
             
             conv_count +=1
 
+            if conv_count == 1:
+                continue
+
             w_mean = m.weight.mean()
             weight_c = m.weight - w_mean
 
             with torch.no_grad():
                 weight_q = int_quant_func(nbit=4, restrictRange=True)(weight_c)
             
-            w_t = weight_q.reshape(cout, cin // args.group_ch, args.group_ch, kh, kw)
+            w_t = weight_q.view(cout, cin // args.group_ch, args.group_ch, kh, kw)
             num_group = (cout * cin) // args.group_ch
-            w_t = w_t.reshape(num_group, args.group_ch, kh, kw)
+            w_t = w_t.view(num_group, args.group_ch, kh, kw)
 
             w_g1 = w_t[:, :args.group_ch//2, :, :]
             w_g2 = w_t[:, args.group_ch//2:, :, :]
@@ -682,30 +685,6 @@ def mismatch_elim(model, log):
 
             mismatch = nonzeros_g1 - nonzeros_g2
 
-            print_log(f'Layer: {conv_count} | Mismatch of current layer: {abs(mismatch)}', log)
-            if abs(mismatch) == 7:
-                if mismatch < 0:
-                    sort, idx = torch.sort(grp_values_g2[non_zero_idx_g2].contiguous().view(-1))
-                    zero_idx = idx[:abs(mismatch)]
-                    zero_grp_idx = non_zero_idx_g2[zero_idx]
-            
-                    mask_g2_1d[zero_grp_idx] = 0.
-                elif mismatch > 0:
-                    sort, idx = torch.sort(grp_values_g2[non_zero_idx_g1].contiguous().view(-1))
-                    zero_idx = idx[:abs(mismatch)]
-                    zero_grp_idx = non_zero_idx_g1[zero_idx]
-
-                    mask_g1_1d[zero_grp_idx] = 0.
-
-                mask_g1_2d = mask_g1_1d.view(w_g1_2d.size(0),1).expand(w_g1_2d.size())
-                mask_g2_2d = mask_g2_1d.view(w_g2_2d.size(0),1).expand(w_g2_2d.size()) 
-
-                mask_2d = torch.cat((mask_g1_2d, mask_g2_2d),dim=1)
-                mask_original = mask_2d.clone().resize_as_(m.weight)
-            
-                m.mask_original = mask_original
-
-            print('============================')
 
 def validate(val_loader, model, criterion, log):
     losses = AverageMeter()
