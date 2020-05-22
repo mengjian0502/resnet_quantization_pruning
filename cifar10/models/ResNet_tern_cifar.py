@@ -77,7 +77,7 @@ class CifarResNet(nn.Module):
     print ('CifarResNet : Depth : {} , Layers for each block : {}'.format(depth, layer_blocks))
     self.num_classes = num_classes
     # self.conv_1_3x3 = nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1, bias=False)
-    self.conv_1_3x3 = int_conv2d(3, 16, kernel_size=3, stride=1, padding=1, bias=False, nbit=8)
+    self.conv_1_3x3 = int_conv2d(3, 16, kernel_size=3, stride=1, padding=1, bias=False, nbit=4)
 
     self.bn_1 = nn.BatchNorm2d(16)
 
@@ -87,8 +87,9 @@ class CifarResNet(nn.Module):
     self.stage_3 = self._make_layer(block, 64, layer_blocks, 2)
     self.avgpool = nn.AvgPool2d(8)
     # self.classifier = nn.Linear(64*block.expansion, num_classes)
-    self.classifier = int_linear(64*block.expansion, num_classes, nbit=8)
- 
+    self.classifier = int_linear(64*block.expansion, num_classes, nbit=4)
+    self.relu0 = ClippedReLU(num_bits=4, alpha=10, inplace=True)
+
     for m in self.modules():
       if isinstance(m, nn.Conv2d):
         n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
@@ -120,7 +121,8 @@ class CifarResNet(nn.Module):
 
   def forward(self, x):
     x = self.conv_1_3x3(x)
-    x = F.relu(self.bn_1(x), inplace=True)
+    # x = F.relu(self.bn_1(x), inplace=True)
+    x = self.relu0(self.bn_1(x))
     x = self.stage_1(x)
     x = self.stage_2(x)
     x = self.stage_3(x)

@@ -537,7 +537,7 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
         if args.swp:
             lamda = torch.tensor(args.lamda).cuda()
             reg_g1 = torch.tensor(0.).cuda()
-            reg_g2 = torch.tensor(0.).cuda()
+            # reg_g2 = torch.tensor(0.).cuda()
             # reg_g3 = torch.tensor(0.).cuda()
             # reg_g4 = torch.tensor(0.).cuda()
 
@@ -566,20 +566,18 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
                         w_l = w_l.view(w_l.size(0), w_l.size(1) // group_ch, group_ch, kw, kw)
                         w_l = w_l.view(num_group, group_ch, kw, kw)
 
-                        reg_g1 += glasso_thre(w_l[:, :group_ch//2, :, :], 1)
-                        reg_g2 += glasso_thre(w_l[:, group_ch//2:, :, :], 1)
+                        reg_g1 += glasso_thre(w_l, 1)               # 16x3x3
+
+                        # reg_g1 += glasso_thre(w_l[:, :group_ch//2, :, :], 1) # 8x3x3
+                        # reg_g2 += glasso_thre(w_l[:, group_ch//2:, :, :], 1)
 
                         # reg_g1 += glasso_thre(w_l[:, :group_ch//4, :, :], 1)
                         # reg_g2 += glasso_thre(w_l[:, group_ch//4:2*group_ch//4, :, :], 1)
                         # reg_g3 += glasso_thre(w_l[:, 2*group_ch//4:3*group_ch//4, :, :], 1)
                         # reg_g4 += glasso_thre(w_l[:, 3*group_ch//4:, :, :], 1)
 
-                        # reg_g1 += glasso_rank(w_l, 1)
                     count += 1
-                # if isinstance(m, nn.Linear):
-                #     w_f = m.weight
-                #     reg_g2 += glasso_thre(w_f, 0)
-            loss += lamda * (reg_g1 + reg_g2)
+            loss += lamda * (reg_g1)
 
         if args.clp:
             reg_alpha = torch.tensor(0.).cuda()
@@ -649,12 +647,13 @@ def mismatch_elim(model, log):
             cin = m.weight.size(1)
             kh = m.weight.size(2)
             kw = m.weight.size(3)
-            
-            conv_count +=1
 
-            if conv_count == 1:
+            if conv_count == 0:
+                conv_count +=1
                 continue
-
+            else:
+                conv_count +=1
+            
             w_mean = m.weight.mean()
             weight_c = m.weight - w_mean
 
@@ -683,8 +682,10 @@ def mismatch_elim(model, log):
             nonzeros_g1 = len(non_zero_idx_g1)
             nonzeros_g2 = len(non_zero_idx_g2)
 
+        
             mismatch = nonzeros_g1 - nonzeros_g2
-
+            print_log(f'Layer: {conv_count} | Layer size: {list(m.weight.size())}| non zero groups g1: {nonzeros_g1} | non zero groups g2: {nonzeros_g2} | Mismatch of current layer: {abs(mismatch)} | required columns: {max(nonzeros_g1, nonzeros_g2) * 4}', log)
+        print()
 
 def validate(val_loader, model, criterion, log):
     losses = AverageMeter()

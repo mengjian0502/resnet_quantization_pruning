@@ -302,3 +302,18 @@ class zero_grp_skp_quant(nn.Conv2d):
     def extra_repr(self):
         return super(zero_grp_skp_quant, self).extra_repr() + ', nbit={}, coef={}, prob={}, skp_group={}'.format(
                 self.nbit, self.coef, self.prob, self.skp_group)
+
+def odd_symm_quant(input, nbit):
+    z_typical = {'4bit': [0.077, 1.013], '8bit':[0.027, 1.114]}
+
+    input = input - input.mean()
+
+    alpha_w = get_scale(input, z_typical[f'{nbit}bit']).item()
+    output = input.clamp(-alpha_w, alpha_w)
+
+    scale, zero_point = symmetric_linear_quantization_params(nbit, abs(alpha_w), restrict_qrange=True)
+
+    output_int = linear_quantize(output, scale, zero_point)
+    output = linear_dequantize(output_int, scale, zero_point)
+
+    return output, output_int, alpha_w
