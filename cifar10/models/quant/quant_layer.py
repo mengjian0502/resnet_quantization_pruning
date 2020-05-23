@@ -275,6 +275,7 @@ class int_linear(nn.Linear):
         w_mean = self.weight.mean()
         weight_c = self.weight
 
+        print(f'Linear layer | Input shape: {list(input.size())} | Weight shape: {list(weight_c.size())}')
         weight_q = int_quant_func(nbit=self.nbit)(weight_c)
 
         output = F.linear(input, weight_q, self.bias)

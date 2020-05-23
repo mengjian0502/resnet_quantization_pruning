@@ -31,6 +31,7 @@ class Qconv2d(nn.Conv2d):
         self.vari = vari
         self.act_alpha = 1.
     @weak_script_method
+
     def forward(self, input):
 
         bitWeight = int(self.wl_weight)
@@ -58,9 +59,9 @@ class Qconv2d(nn.Conv2d):
 
             # reshape the weight
             kw = weight_int.size(2)
-            num_group = weight_int.size(0) * weight_int.size(1) // group_ch
+            num_col = weight_int.size(0) * weight_int.size(1) // group_ch
             weight_int = weight_int.view(weight_int.size(0), weight_int.size(1) // self.col_size, self.col_size, kw, kw)
-            weight_int = weight_int.view(num_group, self.col_size, kw, kw)                                                          # reshape the 4-D weight tensor to the column based shape
+            weight_int = weight_int.view(num_col, self.col_size, kw, kw)                                                          # reshape the 4-D weight tensor to the column based shape
 
             # loop over the group of rows
             for ii in range(num_sub_groups):
@@ -107,8 +108,86 @@ class Qconv2d(nn.Conv2d):
 
 
 
+class QLinear(nn.Linear):
+    def __init__(self, in_channels, out_channels, bias=True, col_size=16, group_size=8, 
+                wl_input=8,wl_activate=8,wl_error=8,wl_weight= 8,inference=0,onoffratio=10,cellBit=1,subArray=128,ADCprecision=5,vari=0)
+        super(QLinear, self).__init__(n_features=in_channels, out_features=out_channels, bias=bias)
 
+        self.col_size = col_size
+        self.group_size = group_size
+        self.wl_activate = wl_activate
+        self.wl_error = wl_error
+        self.wl_input = wl_input
+        self.inference = inference
+        self.wl_weight = wl_weight
+        self.onoffratio = onoffratio
+        self.cellBit = cellBit
+        self.subArray = subArray
+        self.ADCprecision = ADCprecision
+        self.vari = vari
+        self.act_alpha = 1.
 
+    @weak_script_method
 
-                
+    def forward(self, input):
+        
+        bitWeight = int(self.wl_weight)
+        bitActivation = int(self.wl_input)
 
+        weight_c = self.weight - self.weight.mean()
+        weight_q, alpha_w, w_scale = odd_symm_quant(input, nbit=bitWeight, dequantize=True, posQ=False)                                               # quantize the input weights
+        weight_int, _, _ = odd_symm_quant(input, nbit=bitWeight, dequantize=False, posQ=True)        
+
+        output_original = F.linear(input, weight_q, self.bias)
+
+        if self.inference == 1:
+            onoffratio = self.onoffratio
+            upper = 1
+            lower = 1/onoffratio
+            num_sub_groups = self.col_size // self.group_size
+
+            output = torch.zeros_like(outputOrignal)
+            del outputOrignal
+            cellRange = 2**self.cellBit   # cell precision is 4
+
+            # dummy crossbar
+            dummyP = torch.zeros_like(weight)
+            dummyP[:,:,:,:] = (cellRange-1)*(upper+lower)/2
+
+            # since fc weight size is relatively small => Directly generate output
+            mask=torch.zeros_like(weight_q)
+            mask[:, :] = 1
+
+            inputQ = activation_quant(input, nbit=bitActivation, sat_val=self.alpha, dequantize=False)                          # quantize the input activation to the integer value
+            outputIN = torch.zeros_like(output)
+
+            for z in range(bitActivation):
+                inputB = torch.fmod(inputQ, 2)
+                inputQ = torch.round((inputQ-inputB)/2)
+
+                # after get the spacial kernel, need to transfer floating weight [-1, 1] to binarized ones
+                X_decimal = weight_int * mask                                                                                   # multiply the quantized integer weight with the corresponding mask
+                outputP = torch.zeros_like(output_original)
+                outputD = torch.zeros_like(output_original)
+
+                for k in range (int(bitWeight/self.cellBit)):
+                    remainder = torch.fmod(X_decimal, cellRange)*mask
+                    variation = np.random.normal(0, self.vari, list(weight.size())).astype(np.float32)
+                    X_decimal = torch.round((X_decimal-remainder)/cellRange)*mask
+
+                    remainderQ = (upper-lower)*(remainder-0)+(cellRange-1)*lower   # weight cannot map to 0, but to Gmin
+                    remainderQ = remainderQ + remainderQ*torch.from_numpy(variation).cuda()
+                    outputPartial= F.linear(inputB, remainderQ*mask, self.bias)
+                    outputDummyPartial= F.linear(inputB, dummyP*mask, self.bias)
+
+                    # Add ADC quanization effects here !!!
+                    outputPartialQ = wage_quantizer.LinearQuantizeOut(outputPartial, self.ADCprecision)
+                    outputDummyPartialQ = wage_quantizer.LinearQuantizeOut(outputDummyPartial, self.ADCprecision)
+                    scaler = cellRange**k
+                    outputP = outputP + outputPartialQ*scaler*2/(1-1/onoffratio)
+                    outputD = outputD + outputDummyPartialQ*scaler*2/(1-1/onoffratio)
+                scalerIN = 2**z
+                outputIN = outputIN + (outputP - outputD)*scalerIN    
+            output = output + outputIN/((2**bitActivation - 1)/self.alpha)   
+        output = output/w_scale
+        return output
