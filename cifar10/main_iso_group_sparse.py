@@ -707,6 +707,9 @@ def validate(val_loader, model, criterion, log):
                 input = input.cuda()
 
             # compute output
+            #for m in model:
+                #alpha
+                #m.apply(alpha, )
             output = model(input)
             loss = criterion(output, target)
 

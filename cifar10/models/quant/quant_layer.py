@@ -9,13 +9,9 @@ import numpy as np
 from torch.autograd import Variable
 from .quantizer import *
 
-# __all__ = ['ClippedReLU', 'clamp_conv2d', 'sawb_tern_Conv2d', 'int_conv2d', 'zero_grp_skp_quant', 'sawb_w2_Conv2d']
-
 
 def odd_symm_quant(input, nbit, dequantize=True, posQ=False):
     z_typical = {'4bit': [0.077, 1.013], '8bit':[0.027, 1.114]}
-
-    input = input - input.mean()
 
     alpha_w = get_scale(input, z_typical[f'{nbit}bit']).item()
     output = input.clamp(-alpha_w, alpha_w)
@@ -25,13 +21,22 @@ def odd_symm_quant(input, nbit, dequantize=True, posQ=False):
 
     scale, zero_point = symmetric_linear_quantization_params(nbit, abs(alpha_w), restrict_qrange=True)
 
-    output_int = linear_quantize(output, scale, zero_point)
+    output = linear_quantize(output, scale, zero_point)
     
     if dequantize:
-        output = linear_dequantize(output_int, scale, zero_point)
+        output = linear_dequantize(output, scale, zero_point)
 
-    return output, alpha_w
+    return output, alpha_w, scale
 
+def activation_quant(input, nbit, sat_val, dequantize=True):
+    scale, zero_point = quantizer(nbit, 0, sat_val)
+    
+    output = linear_quantize(output, scale, zero_point)
+
+    if dequantize:
+        output = linear_dequantize(output, scale, zero_point)
+
+    return output
 
 class sawb_w2_Func(torch.autograd.Function):
 
