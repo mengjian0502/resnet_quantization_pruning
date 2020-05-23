@@ -537,9 +537,9 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
         if args.swp:
             lamda = torch.tensor(args.lamda).cuda()
             reg_g1 = torch.tensor(0.).cuda()
-            # reg_g2 = torch.tensor(0.).cuda()
-            # reg_g3 = torch.tensor(0.).cuda()
-            # reg_g4 = torch.tensor(0.).cuda()
+            reg_g2 = torch.tensor(0.).cuda()
+            reg_g3 = torch.tensor(0.).cuda()
+            reg_g4 = torch.tensor(0.).cuda()
 
             group_ch = args.group_ch
             # == channel-wise defined 
@@ -566,18 +566,18 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
                         w_l = w_l.view(w_l.size(0), w_l.size(1) // group_ch, group_ch, kw, kw)
                         w_l = w_l.view(num_group, group_ch, kw, kw)
 
-                        reg_g1 += glasso_thre(w_l, 1)               # 16x3x3
+                        # reg_g1 += glasso_thre(w_l, 1)               # 16x3x3
 
                         # reg_g1 += glasso_thre(w_l[:, :group_ch//2, :, :], 1) # 8x3x3
                         # reg_g2 += glasso_thre(w_l[:, group_ch//2:, :, :], 1)
 
-                        # reg_g1 += glasso_thre(w_l[:, :group_ch//4, :, :], 1)
-                        # reg_g2 += glasso_thre(w_l[:, group_ch//4:2*group_ch//4, :, :], 1)
-                        # reg_g3 += glasso_thre(w_l[:, 2*group_ch//4:3*group_ch//4, :, :], 1)
-                        # reg_g4 += glasso_thre(w_l[:, 3*group_ch//4:, :, :], 1)
+                        reg_g1 += glasso_thre(w_l[:, :group_ch//4, :, :], 1)
+                        reg_g2 += glasso_thre(w_l[:, group_ch//4:2*group_ch//4, :, :], 1)
+                        reg_g3 += glasso_thre(w_l[:, 2*group_ch//4:3*group_ch//4, :, :], 1)
+                        reg_g4 += glasso_thre(w_l[:, 3*group_ch//4:, :, :], 1)
 
                     count += 1
-            loss += lamda * (reg_g1)
+            loss += lamda * (reg_g1 + reg_g2 + reg_g3 + reg_g4)
 
         if args.clp:
             reg_alpha = torch.tensor(0.).cuda()
@@ -715,6 +715,9 @@ def validate(val_loader, model, criterion, log):
             losses.update(loss.item(), input.size(0))
             top1.update(prec1.item(), input.size(0))
             top5.update(prec5.item(), input.size(0))
+        
+            if i == 0:
+                break
 
         print_log(
             '  **Test** Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f} Error@1 {error1:.3f}'.format(top1=top1, top5=top5,

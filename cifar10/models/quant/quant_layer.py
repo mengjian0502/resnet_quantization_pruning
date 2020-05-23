@@ -11,6 +11,28 @@ from .quantizer import *
 
 # __all__ = ['ClippedReLU', 'clamp_conv2d', 'sawb_tern_Conv2d', 'int_conv2d', 'zero_grp_skp_quant', 'sawb_w2_Conv2d']
 
+
+def odd_symm_quant(input, nbit, dequantize=True, posQ=False):
+    z_typical = {'4bit': [0.077, 1.013], '8bit':[0.027, 1.114]}
+
+    input = input - input.mean()
+
+    alpha_w = get_scale(input, z_typical[f'{nbit}bit']).item()
+    output = input.clamp(-alpha_w, alpha_w)
+
+    if posQ:
+        output = output + alpha_w
+
+    scale, zero_point = symmetric_linear_quantization_params(nbit, abs(alpha_w), restrict_qrange=True)
+
+    output_int = linear_quantize(output, scale, zero_point)
+    
+    if dequantize:
+        output = linear_dequantize(output_int, scale, zero_point)
+
+    return output, alpha_w
+
+
 class sawb_w2_Func(torch.autograd.Function):
 
     def __init__(self, alpha):
@@ -206,6 +228,7 @@ class int_quant_func(torch.autograd.Function):
 
         scale, zero_point = symmetric_linear_quantization_params(self.nbit, abs(alpha_w), restrict_qrange=self.restrictRange)
         output = STEQuantizer_weight.apply(output, scale, zero_point, True, False, self.nbit, self.restrictRange)
+
         return output
     
     def backward(self, grad_output):
@@ -231,6 +254,7 @@ class int_conv2d(nn.Conv2d):
         weight_q = int_quant_func(nbit=self.nbit, restrictRange=True)(weight_c)
         
         output = F.conv2d(input, weight_q*self.mask_original, self.bias, self.stride, self.padding, self.dilation, self.groups)
+        # print(f'Max of conv input: {input.max()}')
         return output
     
     def extra_repr(self):
@@ -303,17 +327,3 @@ class zero_grp_skp_quant(nn.Conv2d):
         return super(zero_grp_skp_quant, self).extra_repr() + ', nbit={}, coef={}, prob={}, skp_group={}'.format(
                 self.nbit, self.coef, self.prob, self.skp_group)
 
-def odd_symm_quant(input, nbit):
-    z_typical = {'4bit': [0.077, 1.013], '8bit':[0.027, 1.114]}
-
-    input = input - input.mean()
-
-    alpha_w = get_scale(input, z_typical[f'{nbit}bit']).item()
-    output = input.clamp(-alpha_w, alpha_w)
-
-    scale, zero_point = symmetric_linear_quantization_params(nbit, abs(alpha_w), restrict_qrange=True)
-
-    output_int = linear_quantize(output, scale, zero_point)
-    output = linear_dequantize(output_int, scale, zero_point)
-
-    return output, output_int, alpha_w
