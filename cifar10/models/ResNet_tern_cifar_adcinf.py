@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import init
-from .quant import Qconv2d, ClippedReLU, int_conv2d, zero_grp_skp_quant, sawb_w2_Conv2d, int_linear, QLinear
+from .quant import Qconv2d, ClippedReLU, int_conv2d, QLinear
 import math
 
 class DownsampleA(nn.Module):
@@ -25,14 +25,14 @@ class ResNetBasicblock(nn.Module):
   def __init__(self, inplanes, planes, stride=1, downsample=None):
     super(ResNetBasicblock, self).__init__() 
     self.conv_a = Qconv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False, 
-                          col_size=16, group_size=16, wl_input=4,wl_weight=4,inference=1,onoffratio=10,cellBit=2,subArray=128,ADCprecision=5,vari=0)  # quantization
-    # self.conv_a = int_conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)  # quantization
+                          col_size=16, group_size=16, wl_input=4,wl_weight=4,inference=1,onoffratio=10,cellBit=2,ADCprecision=5)  # quantization
+
     self.bn_a = nn.BatchNorm2d(planes)
     self.relu1 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
 
     self.conv_b = Qconv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False, 
-                          col_size=16, group_size=16, wl_input=4,wl_weight=4,inference=1,onoffratio=10,cellBit=2,subArray=128,ADCprecision=5,vari=0)  # quantization
-    # self.conv_b = int_conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # quantization
+                          col_size=16, group_size=16, wl_input=4,wl_weight=4,inference=1,onoffratio=10,cellBit=2,ADCprecision=5)  # quantization
+    
     self.bn_b = nn.BatchNorm2d(planes)
     self.relu2 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
     self.downsample = downsample
@@ -82,9 +82,7 @@ class CifarResNet(nn.Module):
     self.stage_2 = self._make_layer(block, 32, layer_blocks, 2)
     self.stage_3 = self._make_layer(block, 64, layer_blocks, 2)
     self.avgpool = nn.AvgPool2d(8)
-    # self.classifier = nn.Linear(64*block.expansion, num_classes)
-    # self.classifier = QLinear(64*block.expansion, num_classes, col_size=16, group_size=16, wl_input=4,wl_weight=4,inference=1,onoffratio=10,cellBit=2,subArray=128,ADCprecision=5,vari=0)
-    self.classifier = int_linear(64*block.expansion, num_classes, nbit=4)
+    self.classifier = QLinear(64*block.expansion, num_classes, col_size=16, group_size=16, wl_input=4,wl_weight=4,inference=1,onoffratio=10,cellBit=2,ADCprecision=5)
     self.relu0 = ClippedReLU(num_bits=4, alpha=10, inplace=True)
 
     for m in self.modules():
@@ -106,7 +104,6 @@ class CifarResNet(nn.Module):
         int_conv2d(self.inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=False),
         nn.BatchNorm2d(planes * block.expansion),
         )
-      # downsample = DownsampleA(self.inplanes, planes * block.expansion, stride)
 
     layers = []
     layers.append(block(self.inplanes, planes, stride, downsample))
@@ -118,7 +115,6 @@ class CifarResNet(nn.Module):
 
   def forward(self, x):
     x = self.conv_1_3x3(x)
-    # x = F.relu(self.bn_1(x), inplace=True)
     x = self.relu0(self.bn_1(x))
     x = self.stage_1(x)
     x = self.stage_2(x)
@@ -136,38 +132,4 @@ def adc_resnet20(num_classes=10):
   model = CifarResNet(ResNetBasicblock, 20, num_classes)
   return model
 
-
-def tern_resnet32(num_classes=10):
-  """Constructs a ResNet-32 model for CIFAR-10 (by default)
-  Args:
-    num_classes (uint): number of classes
-  """
-  model = CifarResNet(ResNetBasicblock, 32, num_classes)
-  return model
-
-
-def tern_resnet44(num_classes=10):
-  """Constructs a ResNet-44 model for CIFAR-10 (by default)
-  Args:
-    num_classes (uint): number of classes
-  """
-  model = CifarResNet(ResNetBasicblock, 44, num_classes)
-  return model
-
-
-def tern_resnet56(num_classes=10):
-  """Constructs a ResNet-56 model for CIFAR-10 (by default)
-  Args:
-    num_classes (uint): number of classes
-  """
-  model = CifarResNet(ResNetBasicblock, 56, num_classes)
-  return model
-
-def tern_resnet110(num_classes=10):
-  """Constructs a ResNet-110 model for CIFAR-10 (by default)
-  Args:
-    num_classes (uint): number of classes
-  """
-  model = CifarResNet(ResNetBasicblock, 110, num_classes)
-  return model
 
