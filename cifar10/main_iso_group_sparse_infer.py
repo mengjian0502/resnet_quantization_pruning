@@ -211,7 +211,7 @@ def main():
     print_log("=> creating model '{}'".format(args.arch), log)
 
     # Init model, criterion, and optimizer
-    net = models.__dict__[args.arch](num_classes)
+    net = models.__dict__[args.arch](num_classes, col_size=args.col_size, group_size=args.group_size)
     print_log("=> network :\n {}".format(net), log)
 
     if args.use_cuda:
