@@ -69,6 +69,7 @@ parser.add_argument('--manualSeed', type=int, default=5000, help='manual seed')
 parser.add_argument('--adc_infer', action='store_true', help='True for adc inference')
 parser.add_argument('--col_size', type=int, default=16, help='Number of rows per column')
 parser.add_argument('--group_size', type=int, default=16, help='Number of channels for each iso-group')
+parser.add_argument('--ADCprecision', type=int, default=5, help='ADC precision of the RRAM')
 ##########################################################################
 
 args = parser.parse_args()
@@ -211,7 +212,7 @@ def main():
     print_log("=> creating model '{}'".format(args.arch), log)
 
     # Init model, criterion, and optimizer
-    net = models.__dict__[args.arch](num_classes, col_size=args.col_size, group_size=args.group_size)
+    net = models.__dict__[args.arch](num_classes, col_size=args.col_size, group_size=args.group_size, ADCprecision=args.ADCprecision)
     print_log("=> network :\n {}".format(net), log)
 
     if args.use_cuda:

@@ -68,15 +68,17 @@ class Qconv2d(nn.Conv2d):
                         remainder = torch.fmod(X_decimal, cellRange)*mask
                         X_decimal = torch.round((X_decimal-remainder)/cellRange)*mask
                         
-                        outputPartial= F.conv2d(inputB, remainder*mask, self.bias, self.stride, self.padding, self.dilation, self.groups)                      # Binarized convolution
-                        # print(f'outputPartial: {torch.unique(outputPartial)}')
-
+                        outputPartial= F.conv2d(inputB, remainder, self.bias, self.stride, self.padding, self.dilation, self.groups)                      # Binarized convolution
                         # Add ADC quanization effects here !!!
                         # outputPartialQ = wage_quantizer.LinearQuantizeOut(outputPartial, self.ADCprecision)
+                        # print(f'outputPartialQ:{len(torch.unique(outputPartialQ))}')
 
                         scaler = cellRange**k
                         outputP = outputP + outputPartial*scaler
+
                     outputDummyPartial = F.conv2d(inputB, dummyP*mask, self.bias, self.stride, self.padding, self.dilation, self.groups) 
+                    # print(f'outputDummyPartial: min={outputDummyPartial.min()} | max={outputDummyPartial.max()}')
+                    # outputDummyPartialQ = wage_quantizer.LinearQuantizeOut(outputDummyPartial, self.ADCprecision)
                     outputD = outputD + outputDummyPartial
 
                     scalerIN = 2**z
@@ -145,15 +147,17 @@ class QLinear(nn.Linear):
 
                     outputPartial= F.linear(inputB, remainder*mask, self.bias)
 
-                    # # Add ADC quanization effects here !!!
-                    # outputPartialQ = wage_quantizer.LinearQuantizeOut(outputPartial, self.ADCprecision)
-                    # outputDummyPartialQ = wage_quantizer.LinearQuantizeOut(outputDummyPartial, self.ADCprecision)
+                    # Add ADC quanization effects here !!!
+                    outputPartialQ = wage_quantizer.LinearQuantizeOut(outputPartial, self.ADCprecision)
+                    # print(self.ADCprecision)
 
                     scaler = cellRange**k
-                    outputP = outputP + outputPartial*scaler
+                    outputP = outputP + outputPartialQ*scaler
                 
                 outputDummyPartial= F.linear(inputB, dummyP*mask, self.bias)
-                outputD = outputD + outputDummyPartial
+                # print(f'Linear layer outputDummyPartial: {torch.unique(outputDummyPartial)}')
+                outputDummyPartialQ = wage_quantizer.LinearQuantizeOut(outputDummyPartial, self.ADCprecision)
+                outputD = outputD + outputDummyPartialQ
 
                 scalerIN = 2**z
                 outputIN = outputIN + (outputP - outputD)*scalerIN    
