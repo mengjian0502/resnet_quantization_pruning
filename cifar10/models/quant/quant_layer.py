@@ -29,9 +29,6 @@ def odd_symm_quant(input, nbit, dequantize=True, posQ=False):
     return output, alpha_w, scale
 
 def activation_quant(input, nbit, sat_val, dequantize=True):
-    sat_val = torch.Tensor([sat_val]).cuda()
-    input = torch.where(input < sat_val, input, sat_val)
-
     with torch.no_grad():
         scale, zero_point = quantizer(nbit, 0, sat_val)
     
@@ -40,7 +37,7 @@ def activation_quant(input, nbit, sat_val, dequantize=True):
     if dequantize:
         output = linear_dequantize(output, scale, zero_point)
 
-    return output
+    return output, scale
 
 class sawb_w2_Func(torch.autograd.Function):
 

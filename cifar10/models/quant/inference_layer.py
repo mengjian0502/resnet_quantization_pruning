@@ -28,8 +28,8 @@ class Qconv2d(nn.Conv2d):
         self.ADCprecision = ADCprecision
         self.vari = vari
         self.act_alpha = 1.
-    @weak_script_method
 
+    @weak_script_method
     def forward(self, input):
         
         bitWeight = int(self.wl_weight)
@@ -37,12 +37,9 @@ class Qconv2d(nn.Conv2d):
 
         weight_c = self.weight - self.weight.mean()
         weight_q, alpha_w, w_scale = odd_symm_quant(weight_c, nbit=bitWeight, dequantize=True, posQ=False)                                               # quantize the input weights
-        weight_int, _, _ = odd_symm_quant(weight_c, nbit=bitWeight, dequantize=False, posQ=True)                                             # quantize the input weights to positive integer
+        weight_int, _, _ = odd_symm_quant(weight_c, nbit=bitWeight, dequantize=False, posQ=True)                                                         # quantize the input weights to positive integer
         
-        # print(f'Floating point levels: {torch.unique(weight_q)}')
-        # print(f'Integer level (positive): {torch.unique(weight_int)}')
         output_original = F.conv2d(input, weight_q, self.bias, self.stride, self.padding, self.dilation, self.groups)
-        # print(f'Original output range: {output_original.min()} : {output_original.max()}')
 
         if self.inference == 1:
             onoffratio = self.onoffratio
@@ -53,68 +50,45 @@ class Qconv2d(nn.Conv2d):
             output = torch.zeros_like(output_original)
             del output_original
             cellRange = 2**self.cellBit   # cell precision is 4
-
-            outputP = torch.zeros_like(output)
-            outputD = torch.zeros_like(output)
-
             
             # loop over the group of rows
             for ii in range(num_sub_groups):
                 mask = torch.zeros_like(weight_q)
                 for jj in np.arange(0, weight_q.size(1)//self.group_size, num_sub_groups):
-                    mask[:, (ii+jj)*self.group_size:(ii+jj+1)*self.group_size,:,:] = 1                                                               # turn on the corresponding rows.
-
-                # # quantize the activation
-                # inputQ = activation_quant(input, nbit=bitActivation, sat_val=self.act_alpha, dequantize=False)                          # quantize the input activation to the integer value   
-
-                # print(f'input:{torch.unique(input)} | clipping factor: {self.act_alpha}') 
-                # # print(f'inputQ:{torch.unique(inputQ)}') 
-
-                # outputIN = torch.zeros_like(output)
-
-                # for z in range(bitActivation):
-                #     inputB = torch.fmod(inputQ, 2)
-                #     inputQ = torch.round((inputQ-inputB)/2)
-                outputP = torch.zeros_like(output)
-
-                X_decimal = weight_int                                                                                  # multiply the quantized integer weight with the corresponding mask
-                # print(torch.unique(X_decimal))
-                outputD = torch.zeros_like(output)                                                                              # dummy output
+                    mask[:, (ii+jj)*self.group_size:(ii+jj+1)*self.group_size,:,:] = 1                                                                  # turn on the corresponding rows.
 
                 dummyP = torch.zeros_like(weight_q)
-                dummyP[:,:,:,:] = 7
-                
-                for k in range (int(bitWeight/self.cellBit)):
-                    remainder = torch.fmod(X_decimal, cellRange)
-                    # variation = np.random.normal(0, self.vari, list(weight_q.size())).astype(np.float32)                          # variation of the circuit
-                    X_decimal = torch.round((X_decimal-remainder)/cellRange)
+                dummyP[:,:,:,:] = 7                                                                                                                     # offset
 
-                    # remainderQ = (upper-lower)*(remainder-0)+(cellRange-1)*lower                                                # weight cannot map to 0, but to Gmin
-                    # remainderQ = remainderQ + remainderQ*torch.from_numpy(variation).cuda()
+                inputQ, act_scale = activation_quant(input, nbit=bitActivation, sat_val=self.act_alpha, dequantize=False)
+                outputIN = torch.zeros_like(output)
+                for z in range(bitActivation):
+                    inputB = torch.fmod(inputQ, 2)
+                    inputQ = torch.round((inputQ-inputB)/2)
+                    # print(f'InputQ: {torch.unique(inputQ)}')
+                    outputP = torch.zeros_like(output)                    
+
+                    X_decimal = weight_int                                                                                                              # multiply the quantized integer weight with the corresponding mask
+                    outputD = torch.zeros_like(output)
+                
+                    for k in range (int(bitWeight/self.cellBit)):
+                        remainder = torch.fmod(X_decimal, cellRange)
+                        X_decimal = torch.round((X_decimal-remainder)/cellRange)
                         
-                    outputPartial= F.conv2d(input, remainder, self.bias, self.stride, self.padding, self.dilation, self.groups)
-                    # print(f'input:{torch.unique(input)}')
-                    # print(f'outputpartial:{torch.unique(outputPartial)}')
+                        outputPartial= F.conv2d(inputB, remainder, self.bias, self.stride, self.padding, self.dilation, self.groups)                      # Binarized convolution
+                        # print(f'outputPartial: {torch.unique(outputPartial)}')
 
-                    # Add ADC quanization effects here !!!
-                    # outputPartialQ = wage_quantizer.LinearQuantizeOut(outputPartial, self.ADCprecision)
+                        # Add ADC quanization effects here !!!
+                        # outputPartialQ = wage_quantizer.LinearQuantizeOut(outputPartial, self.ADCprecision)
 
-                    scaler = cellRange**k
-                    outputP = outputP + outputPartial*scaler
-                    # print(f'OutputP:{torch.unique(outputP)}')
-
-                    # scalerIN = 2**z
-                # print(f'outputP: {torch.unique(outputP)}')
-                outputD = F.conv2d(input, dummyP, self.bias, self.stride, self.padding, self.dilation, self.groups)
-                output = output + (outputP - outputD)
-                
-                # output = output + outputIN/((2**bitActivation - 1)/self.act_alpha)                                                      # dequantize it back    
-            output = output/w_scale
-        
-        # print(f'output range: {output.min()} : {output.max()}')
+                        scaler = cellRange**k
+                        outputP = outputP + outputPartial*scaler
+                    outputD = outputD + F.conv2d(inputB, dummyP, self.bias, self.stride, self.padding, self.dilation, self.groups)
+                    scalerIN = 2**z
+                    outputIN = outputIN + (outputP - outputD)*scalerIN
+                output = output + outputIN/act_scale                                                                                                       # dequantize it back    
+            output = output/w_scale        
         return output         
-
-
 
 class QLinear(nn.Linear):
     def __init__(self, in_channels, out_channels, bias=True, col_size=16, group_size=8, 
