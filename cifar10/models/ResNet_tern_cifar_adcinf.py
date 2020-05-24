@@ -124,12 +124,12 @@ class CifarResNet(nn.Module):
     return self.classifier(x)
 
 
-def adc_resnet20(num_classes=10):
+def adc_resnet20(num_classes=10, col_size=16, group_size=16):
   """Constructs a ResNet-20 model for CIFAR-10 (by default)
   Args:
     num_classes (uint): number of classes
   """
-  model = CifarResNet(ResNetBasicblock, 20, num_classes)
+  model = CifarResNet(ResNetBasicblock, 20, num_classes, col_size=col_size, group_size=group_size)
   return model
 
 
