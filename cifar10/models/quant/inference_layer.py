@@ -13,7 +13,7 @@ from .quant_layer import *
 
 class Qconv2d(nn.Conv2d):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=False, 
-                col_size=16, group_size=8, wl_input=8, wl_weight=8,inference=0,onoffratio=10,cellBit=1,ADCprecision=5):
+                col_size=16, group_size=8, wl_input=8, wl_weight=8,inference=0,cellBit=1,ADCprecision=5):
         super(Qconv2d, self).__init__(in_channels, out_channels, kernel_size,
                                       stride, padding, dilation, groups, bias)
 

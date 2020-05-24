@@ -22,19 +22,19 @@ class ResNetBasicblock(nn.Module):
   """
   RexNet basicblock (https://github.com/facebook/fb.resnet.torch/blob/master/models/resnet.lua)
   """
-  def __init__(self, inplanes, planes, stride=1, downsample=None):
+  def __init__(self, inplanes, planes, stride=1, downsample=None, col_size=16, group_size=16):
     super(ResNetBasicblock, self).__init__() 
     self.conv_a = Qconv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False, 
-                          col_size=16, group_size=16, wl_input=4,wl_weight=4,inference=1,onoffratio=10,cellBit=2,ADCprecision=5)  # quantization
+                          col_size=col_size, group_size=group_size, wl_input=4,wl_weight=4,inference=1,cellBit=2,ADCprecision=5)  # quantization
 
     self.bn_a = nn.BatchNorm2d(planes)
-    self.relu1 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
+    self.relu1 = ClippedReLU(num_bits=4, alpha=10, inplace=True)                                                    # Clipped ReLU function 4 - bits
 
     self.conv_b = Qconv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False, 
-                          col_size=16, group_size=16, wl_input=4,wl_weight=4,inference=1,onoffratio=10,cellBit=2,ADCprecision=5)  # quantization
+                          col_size=col_size, group_size=group_size, wl_input=4,wl_weight=4,inference=1,cellBit=2,ADCprecision=5)  # quantization
     
     self.bn_b = nn.BatchNorm2d(planes)
-    self.relu2 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
+    self.relu2 = ClippedReLU(num_bits=4, alpha=10, inplace=True)                                                    # Clipped ReLU function 4 - bits
     self.downsample = downsample
 
   def forward(self, x):
@@ -58,7 +58,7 @@ class CifarResNet(nn.Module):
   ResNet optimized for the Cifar dataset, as specified in
   https://arxiv.org/abs/1512.03385.pdf
   """
-  def __init__(self, block, depth, num_classes):
+  def __init__(self, block, depth, num_classes, col_size=16, group_size=16):
     """ Constructor
     Args:
       depth: number of layers.
@@ -78,11 +78,11 @@ class CifarResNet(nn.Module):
     self.bn_1 = nn.BatchNorm2d(16)
 
     self.inplanes = 16
-    self.stage_1 = self._make_layer(block, 16, layer_blocks, 1)
-    self.stage_2 = self._make_layer(block, 32, layer_blocks, 2)
-    self.stage_3 = self._make_layer(block, 64, layer_blocks, 2)
+    self.stage_1 = self._make_layer(block, 16, layer_blocks, 1, col_size=col_size, group_size=group_size)
+    self.stage_2 = self._make_layer(block, 32, layer_blocks, 2, col_size=col_size, group_size=group_size)
+    self.stage_3 = self._make_layer(block, 64, layer_blocks, 2, col_size=col_size, group_size=group_size)
     self.avgpool = nn.AvgPool2d(8)
-    self.classifier = QLinear(64*block.expansion, num_classes, col_size=16, group_size=16, wl_input=4,wl_weight=4,inference=1,onoffratio=10,cellBit=2,ADCprecision=5)
+    self.classifier = QLinear(64*block.expansion, num_classes, col_size=col_size, group_size=group_size, wl_input=4,wl_weight=4,inference=1,onoffratio=10,cellBit=2,ADCprecision=5)
     self.relu0 = ClippedReLU(num_bits=4, alpha=10, inplace=True)
 
     for m in self.modules():
@@ -97,7 +97,7 @@ class CifarResNet(nn.Module):
         init.kaiming_normal_(m.weight)
         m.bias.data.zero_()
 
-  def _make_layer(self, block, planes, blocks, stride=1):
+  def _make_layer(self, block, planes, blocks, stride=1, col_size=16, group_size=16):
     downsample = None
     if stride != 1 or self.inplanes != planes * block.expansion:
       downsample = nn.Sequential(
@@ -106,10 +106,10 @@ class CifarResNet(nn.Module):
         )
 
     layers = []
-    layers.append(block(self.inplanes, planes, stride, downsample))
+    layers.append(block(self.inplanes, planes, stride, downsample, col_size=col_size, group_size=group_size))
     self.inplanes = planes * block.expansion
     for i in range(1, blocks):
-      layers.append(block(self.inplanes, planes))
+      layers.append(block(self.inplanes, planes, col_size=col_size, group_size=group_size))
 
     return nn.Sequential(*layers)
 
