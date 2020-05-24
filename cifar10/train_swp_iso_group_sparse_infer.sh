@@ -17,7 +17,7 @@ dataset=cifar10
 batch_size=128
 col_size=16
 group_size=16
-adc_precision=5
+adc_precision=6
 
 lambda_=0.001
 

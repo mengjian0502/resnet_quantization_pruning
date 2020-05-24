@@ -5,6 +5,8 @@ Inference with different ADC precisions
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
+import seaborn as sns
 from torch._jit_internal import weak_script_method
 from .utee import wage_initializer,wage_quantizer
 import numpy as np
@@ -42,17 +44,15 @@ class Qconv2d(nn.Conv2d):
             num_sub_groups = self.col_size // self.group_size
 
             output = torch.zeros_like(output_original)
-            del output_original
+            # del output_original
             cellRange = 2**self.cellBit   # cell precision is 2
-            
+
             # loop over the group of rows
             for ii in range(num_sub_groups):
                 mask = torch.zeros_like(weight_q)
                 for jj in np.arange(0, weight_q.size(1)//self.group_size, num_sub_groups):
                     mask[:, (ii+jj)*self.group_size:(ii+jj+1)*self.group_size,:,:] = 1                                                                  # turn on the corresponding rows.
 
-                dummyP = torch.zeros_like(weight_q)
-                dummyP[:,:,:,:] = 7                                                                                                                     # offset
 
                 inputQ, act_scale = activation_quant(input, nbit=bitActivation, sat_val=self.act_alpha, dequantize=False)
                 outputIN = torch.zeros_like(output)
@@ -63,28 +63,36 @@ class Qconv2d(nn.Conv2d):
 
                     X_decimal = weight_int*mask                                                                                                              # multiply the quantized integer weight with the corresponding mask
                     outputD = torch.zeros_like(output)
-                
+
+                    dummyP = torch.zeros_like(weight_q)
+
                     for k in range (int(bitWeight/self.cellBit)):
+                        if k == 0:
+                            dummyP[:,:,:,:] = 1  
+                        elif k == 1:
+                            dummyP[:,:,:,:] = 1.5
+
                         remainder = torch.fmod(X_decimal, cellRange)*mask
                         X_decimal = torch.round((X_decimal-remainder)/cellRange)*mask
                         
                         outputPartial= F.conv2d(inputB, remainder, self.bias, self.stride, self.padding, self.dilation, self.groups)                      # Binarized convolution
                         # Add ADC quanization effects here !!!
-                        # outputPartialQ = wage_quantizer.LinearQuantizeOut(outputPartial, self.ADCprecision)
-                        # print(f'outputPartialQ:{len(torch.unique(outputPartialQ))}')
-
+                        outputPartialQ = wage_quantizer.LinearQuantizeOut(outputPartial, self.ADCprecision)
+                    
+                        
                         scaler = cellRange**k
-                        outputP = outputP + outputPartial*scaler
+                        outputP = outputP + outputPartialQ*scaler
 
-                    outputDummyPartial = F.conv2d(inputB, dummyP*mask, self.bias, self.stride, self.padding, self.dilation, self.groups) 
-                    # print(f'outputDummyPartial: min={outputDummyPartial.min()} | max={outputDummyPartial.max()}')
-                    # outputDummyPartialQ = wage_quantizer.LinearQuantizeOut(outputDummyPartial, self.ADCprecision)
-                    outputD = outputD + outputDummyPartial
+                        outputDummyPartial = F.conv2d(inputB, dummyP*mask, self.bias, self.stride, self.padding, self.dilation, self.groups) 
+                        outputDummyPartialQ = wage_quantizer.LinearQuantizeOut(outputDummyPartial, self.ADCprecision)
 
+
+                        outputD = outputD + outputDummyPartialQ*scaler
+                        
                     scalerIN = 2**z
                     outputIN = outputIN + (outputP - outputD)*scalerIN
                 output = output + outputIN/act_scale                                                                                                       # dequantize it back    
-            output = output/w_scale        
+            output = output/w_scale
         return output         
 
 class QLinear(nn.Linear):
