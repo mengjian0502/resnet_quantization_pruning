@@ -17,7 +17,7 @@ from collections import OrderedDict
 from utils_.utils import AverageMeter, RecorderMeter, time_string, convert_secs2time
 from utils_.reorganize_param import reorganize_param
 from utils_.model_summary import summary
-from models.quant import int_conv2d, int_quant_func
+from models.quant import int_conv2d, int_quant_func, Qconv2d, QLinear
 import csv
 
 # from torch.utils.tensorboard import SummaryWriter
@@ -116,11 +116,8 @@ parser.add_argument('--layer_inter', type=int, default=1,  help='compress layer 
 # mismatch elimination
 parser.add_argument('--mismatch_elim', action='store_true', help='True for mismatch elimination')
 
-# zero group skip:
-parser.add_argument('--TD_alpha', type=float, default=0.0, help='target probability value for zero group skip')
-parser.add_argument('--TD_alpha_final', type=float, default=0.99, help='final alpha value for targeted dropout')
-parser.add_argument('--ramping_power', type=float, default=5.0, help='power of ramping schedule')
-parser.add_argument('--coef', type=float, default=0.05, help='percentage of the first quantization level')
+# Inference with ADC
+parser.add_argument('--adc_infer', action='store_true', help='True for adc inference')
 ##########################################################################
 
 args = parser.parse_args()
@@ -542,17 +539,6 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
             reg_g4 = torch.tensor(0.).cuda()
 
             group_ch = args.group_ch
-            # == channel-wise defined 
-            # for m in model.modules():
-            #     if isinstance(m, nn.Conv2d):
-            #         w_l = m.weight
-            #         w_l = w_l.view(w_l.size(0), -1)
-            #         reg_g1 += glasso_thre(w_l, 1)
-            #     if isinstance(m, nn.Linear):
-            #         w_f = m.weight
-            #         reg_g2 += glasso_thre(w_f, 0)
-
-            # loss += lamda * (reg_g1+reg_g2) 
 
             # == group-wise defined
             count = 0
@@ -685,7 +671,6 @@ def mismatch_elim(model, log):
         
             mismatch = nonzeros_g1 - nonzeros_g2
             print_log(f'Layer: {conv_count} | Layer size: {list(m.weight.size())}| non zero groups g1: {nonzeros_g1} | non zero groups g2: {nonzeros_g2} | Mismatch of current layer: {abs(mismatch)} | required columns: {max(nonzeros_g1, nonzeros_g2) * 4}', log)
-        print()
 
 def validate(val_loader, model, criterion, log):
     losses = AverageMeter()
@@ -699,17 +684,30 @@ def validate(val_loader, model, criterion, log):
         print_log(f'mismatch elimination...', log)
         mismatch_elim(model, log)
 
+    if args.adc_infer:
+        alpha = []
+        for name, param in model.named_parameters():
+            if 'alpha' in name:
+                print(f'alpha:{param.item()} | name: {name}')
+                alpha.append(param.item())
+        count = 0
+        for m in model.modules():
+            if isinstance(m, Qconv2d):
+                if count == 0:
+                    m.act_alpha = alpha[-1]
+                else:
+                    m.act_alpha = alpha[count-1]
+                count += 1
+
+            if isinstance(m, QLinear):
+                m.act_alpha = alpha[count-1]
+
     with torch.no_grad():
         for i, (input, target) in enumerate(val_loader):
-
             if args.use_cuda:
                 target = target.cuda()
                 input = input.cuda()
 
-            # compute output
-            #for m in model:
-                #alpha
-                #m.apply(alpha, )
             output = model(input)
             loss = criterion(output, target)
 
@@ -719,8 +717,8 @@ def validate(val_loader, model, criterion, log):
             top1.update(prec1.item(), input.size(0))
             top5.update(prec5.item(), input.size(0))
         
-            if i == 0:
-                break
+            # if i == 0:
+            #     break
 
         print_log(
             '  **Test** Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f} Error@1 {error1:.3f}'.format(top1=top1, top5=top5,

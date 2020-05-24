@@ -1,6 +1,5 @@
 #!/usr/bin/ sh
 
-# PYTHON="/home/mengjian/anaconda3/bin/python3"
 PYTHON="/home/mengjian/anaconda3/envs/neurosim_test/bin/python3"
 
 ############ directory to save result #############
@@ -13,7 +12,7 @@ if [ ! -d "$DIRECTORY" ]; then
 fi
 
 ############ Configurations ###############
-model=tern_resnet20
+model=adc_resnet20
 dataset=cifar10
 epochs=200
 batch_size=128
@@ -46,10 +45,10 @@ do
         --print_freq 100 --decay ${wd} \
         --lamda ${i}   --ratio 0.7 \
         --resume ${eval_model} \
-        --fine_tune \
         --clp \
         --a_lambda ${a_lambda} \
         --group_ch ${group_ch} \
         --swp \
-        --evaluate
+        --evaluate \
+        --adc_infer
 done

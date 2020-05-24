@@ -29,9 +29,13 @@ def odd_symm_quant(input, nbit, dequantize=True, posQ=False):
     return output, alpha_w, scale
 
 def activation_quant(input, nbit, sat_val, dequantize=True):
-    scale, zero_point = quantizer(nbit, 0, sat_val)
+    sat_val = torch.Tensor([sat_val]).cuda()
+    input = torch.where(input < sat_val, input, sat_val)
+
+    with torch.no_grad():
+        scale, zero_point = quantizer(nbit, 0, sat_val)
     
-    output = linear_quantize(output, scale, zero_point)
+    output = linear_quantize(input, scale, zero_point)
 
     if dequantize:
         output = linear_dequantize(output, scale, zero_point)
@@ -162,6 +166,18 @@ class ClippedReLU(nn.Module):
             scale, zero_point = quantizer(self.num_bits, 0, self.alpha)
         input = STEQuantizer.apply(input, scale, zero_point, self.dequantize, self.inplace)
         return input
+
+class ClippedReLU_dummy(nn.Module):
+    def __init__(self, num_bits, alpha=8.0, inplace=False, dequantize=True):
+        super(ClippedReLU_dummy, self).__init__()
+        self.alpha = nn.Parameter(torch.Tensor([alpha]))     
+        self.num_bits = num_bits
+        self.inplace = inplace
+        self.dequantize = dequantize
+        
+    def forward(self, input):
+        input = F.relu(input)
+        return input
     
 class clamp_conv2d(nn.Conv2d):
 
@@ -259,7 +275,9 @@ class int_conv2d(nn.Conv2d):
         weight_q = int_quant_func(nbit=self.nbit, restrictRange=True)(weight_c)
         
         output = F.conv2d(input, weight_q*self.mask_original, self.bias, self.stride, self.padding, self.dilation, self.groups)
-        # print(f'Max of conv input: {input.max()}')
+        # if not self.weight.size(2) == 1:
+        #     print(f'Weight size: {list(weight_q.size())}')
+        #     print(f'quantized input: {torch.unique(input)}')
         return output
     
     def extra_repr(self):
@@ -275,7 +293,7 @@ class int_linear(nn.Linear):
         w_mean = self.weight.mean()
         weight_c = self.weight
 
-        print(f'Linear layer | Input shape: {list(input.size())} | Weight shape: {list(weight_c.size())}')
+        # print(f'Linear layer | Input shape: {list(input.size())} | Weight shape: {list(weight_c.size())}')
         weight_q = int_quant_func(nbit=self.nbit)(weight_c)
 
         output = F.linear(input, weight_q, self.bias)
