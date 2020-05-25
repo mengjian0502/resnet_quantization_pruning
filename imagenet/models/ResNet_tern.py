@@ -126,7 +126,7 @@ def conv3x3_bl(in_planes, out_planes, stride=1):
                      padding=1, bias=False)
 
 def conv3x3_quan(in_planes, out_planes, stride=1):
-    return sawb_w2_Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
+    return int_conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
                      padding=1, bias=False)
 
 class BasicBlock(nn.Module):
@@ -137,12 +137,12 @@ class BasicBlock(nn.Module):
         self.conv1 = conv3x3_quan(inplanes, planes, stride)
         self.bn1 = nn.BatchNorm2d(planes)
         # self.relu = nn.ReLU(inplace=True)
-        self.relu1 = ClippedReLU(num_bits=2, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
+        self.relu1 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function
         
         self.conv2 = conv3x3_quan(planes, planes)
         self.bn2 = nn.BatchNorm2d(planes)
-        # self.relu2 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
-        self.relu2 = nn.ReLU(inplace=True)
+        self.relu2 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function
+        # self.relu2 = nn.ReLU(inplace=True)
         
         self.downsample = downsample
         self.stride = stride
@@ -259,7 +259,7 @@ class ResNet(nn.Module):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
-                nn.Conv2d(self.inplanes, planes * block.expansion,
+                int_conv2d(self.inplanes, planes * block.expansion,
                           kernel_size=1, stride=stride, bias=False),
                 nn.BatchNorm2d(planes * block.expansion),
             )
