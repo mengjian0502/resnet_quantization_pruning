@@ -14,10 +14,11 @@ fi
 ############ Configurations ###############
 model=adc_resnet20
 dataset=cifar10
-batch_size=128
+batch_size=128 
 col_size=16
 group_size=16
-adc_precision=6
+adc_precision=8
+cell_bit=2
 
 lambda_=0.001
 
@@ -33,5 +34,6 @@ $PYTHON -W ignore main_iso_group_sparse_infer.py --dataset ${dataset} \
     --adc_infer \
     --col_size ${col_size} \
     --group_size ${group_size} \
-    --ADCprecision ${adc_precision}
+    --ADCprecision ${adc_precision} \
+    --cell_bit ${cell_bit}
 

@@ -70,6 +70,7 @@ parser.add_argument('--adc_infer', action='store_true', help='True for adc infer
 parser.add_argument('--col_size', type=int, default=16, help='Number of rows per column')
 parser.add_argument('--group_size', type=int, default=16, help='Number of channels for each iso-group')
 parser.add_argument('--ADCprecision', type=int, default=5, help='ADC precision of the RRAM')
+parser.add_argument('--cell_bit', type=int, default=2, help='precision of each memory cell')
 ##########################################################################
 
 args = parser.parse_args()
@@ -212,7 +213,7 @@ def main():
     print_log("=> creating model '{}'".format(args.arch), log)
 
     # Init model, criterion, and optimizer
-    net = models.__dict__[args.arch](num_classes, col_size=args.col_size, group_size=args.group_size, ADCprecision=args.ADCprecision)
+    net = models.__dict__[args.arch](num_classes, col_size=args.col_size, group_size=args.group_size, ADCprecision=args.ADCprecision, cellBit=args.cell_bit)
     print_log("=> network :\n {}".format(net), log)
 
     if args.use_cuda:
@@ -287,7 +288,9 @@ def validate(val_loader, model, criterion, log):
             if isinstance(m, Qconv2d):
                 if count == 0:
                     m.act_alpha = alpha[-1]
+                    m.layer_idx = count
                 else:
+                    m.layer_idx = count
                     m.act_alpha = alpha[count-1]
                 count += 1
 
@@ -300,6 +303,10 @@ def validate(val_loader, model, criterion, log):
                 target = target.cuda()
                 input = input.cuda()
 
+            for m in model.modules():
+                if isinstance(m, Qconv2d):
+                    m.iter = i
+            
             output = model(input)
             loss = criterion(output, target)
 
@@ -308,10 +315,7 @@ def validate(val_loader, model, criterion, log):
             losses.update(loss.item(), input.size(0))
             top1.update(prec1.item(), input.size(0))
             top5.update(prec5.item(), input.size(0))
-        
-            # if i == 0:
-            #     break
-
+            
         print_log(
             '  **Test** Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f} Error@1 {error1:.3f}'.format(top1=top1, top5=top5,
                                                                                                  error1=100 - top1.avg),log)

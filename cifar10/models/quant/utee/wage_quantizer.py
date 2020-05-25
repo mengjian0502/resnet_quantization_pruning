@@ -182,9 +182,11 @@ def NonLinearQuantizeOut(x, bit):
     return y
 
 
-def LinearQuantizeOut(x, bit):
+def LinearQuantizeOut(x, bit):    
     minQ = torch.min(x)
     delta = torch.max(x) - torch.min(x)
+    # print(f'minimum quantization boundar: {minQ} | maximum: {torch.max(x)}')
+
     y = x.clone()
     
     stepSizeRatio = 2.**(-bit)
@@ -192,10 +194,7 @@ def LinearQuantizeOut(x, bit):
     index = torch.clamp(torch.round((x-minQ.item())/stepSize), 0, (2.**(bit)-1))
     y = index*stepSize + minQ.item()
 
-    if x.mean() == 0 and x.std() == 0:
-        return x
-    else:
-        return y
+    return y
 
 
 class WAGERounding(Function):
