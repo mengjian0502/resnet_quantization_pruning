@@ -9,7 +9,35 @@ import numpy as np
 from torch.autograd import Variable
 from .quantizer import *
 
-__all__ = ['ClippedReLU', 'clamp_conv2d', 'sawb_tern_Conv2d', 'int_conv2d', 'zero_grp_skp_quant', 'sawb_w2_Conv2d']
+
+def odd_symm_quant(input, nbit, dequantize=True, posQ=False):
+    z_typical = {'4bit': [0.077, 1.013], '8bit':[0.027, 1.114]}
+
+    alpha_w = get_scale(input, z_typical[f'{nbit}bit']).item()
+    output = input.clamp(-alpha_w, alpha_w)
+
+    if posQ:
+        output = output + alpha_w
+
+    scale, zero_point = symmetric_linear_quantization_params(nbit, abs(alpha_w), restrict_qrange=True)
+
+    output = linear_quantize(output, scale, zero_point)
+    
+    if dequantize:
+        output = linear_dequantize(output, scale, zero_point)
+
+    return output, alpha_w, scale
+
+def activation_quant(input, nbit, sat_val, dequantize=True):
+    with torch.no_grad():
+        scale, zero_point = quantizer(nbit, 0, sat_val)
+    
+    output = linear_quantize(input, scale, zero_point)
+
+    if dequantize:
+        output = linear_dequantize(output, scale, zero_point)
+
+    return output, scale
 
 class sawb_w2_Func(torch.autograd.Function):
 
@@ -62,15 +90,15 @@ class sawb_ternFunc(torch.autograd.Function):
         return grad_input
 
 class zero_skp_quant(torch.autograd.Function):
-    def __init__(self, nbit, coef, group_ch):
+    def __init__(self, nbit, coef, group_ch, prob):
         super(zero_skp_quant, self).__init__()
         self.nbit = nbit
         self.coef = coef
         self.group_ch = group_ch
+        self.prob = prob
     
     def forward(self, input):
         self.save_for_backward(input)
-        z_typical = {'4bit': [0.077, 1.013], '8bit':[0.027, 1.114]}                 # c1, c2 from the typical distribution (4bit)
 
         # alpha_w_original = get_scale(input, z_typical[f'{int(self.nbit)}bit'])
         alpha_w_original = get_scale_2bit(input)
@@ -87,13 +115,15 @@ class zero_skp_quant(torch.autograd.Function):
 
         grp_values = w_t.norm(p=2, dim=1)                                               # L2 norm
         mask_1d = grp_values.gt(self.th*self.group_ch*kh*kw).float()
+        # mask_dropout = torch.rand_like(mask_1d_small).lt(self.prob).float()
+
+        # apply the probablistic sampling:
+        # mask_1d = 1 - mask_1d_small * mask_dropout
         mask_2d = mask_1d.view(w_t.size(0),1).expand(w_t.size()) 
 
         w_t = w_t * mask_2d
 
-        # non_zero_idx = torch.nonzero(torch.sum(w_t, dim=1)).squeeze(1)                # get the indexes of the nonzero groups
         non_zero_idx = torch.nonzero(mask_1d).squeeze(1)                             # get the indexes of the nonzero groups
-        # print(f'size of non zero idx: {non_zero_idx.size()}')
         non_zero_grp = w_t[non_zero_idx]                                             # what about the distribution of non_zero_group?
         
         weight_q = non_zero_grp.clone()
@@ -132,6 +162,18 @@ class ClippedReLU(nn.Module):
         with torch.no_grad():
             scale, zero_point = quantizer(self.num_bits, 0, self.alpha)
         input = STEQuantizer.apply(input, scale, zero_point, self.dequantize, self.inplace)
+        return input
+
+class ClippedReLU_dummy(nn.Module):
+    def __init__(self, num_bits, alpha=8.0, inplace=False, dequantize=True):
+        super(ClippedReLU_dummy, self).__init__()
+        self.alpha = nn.Parameter(torch.Tensor([alpha]))     
+        self.num_bits = num_bits
+        self.inplace = inplace
+        self.dequantize = dequantize
+        
+    def forward(self, input):
+        input = F.relu(input)
         return input
     
 class clamp_conv2d(nn.Conv2d):
@@ -204,6 +246,7 @@ class int_quant_func(torch.autograd.Function):
 
         scale, zero_point = symmetric_linear_quantization_params(self.nbit, abs(alpha_w), restrict_qrange=self.restrictRange)
         output = STEQuantizer_weight.apply(output, scale, zero_point, True, False, self.nbit, self.restrictRange)
+
         return output
     
     def backward(self, grad_output):
@@ -214,16 +257,47 @@ class int_quant_func(torch.autograd.Function):
         return grad_input
 
 class int_conv2d(nn.Conv2d):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, 
+                 padding=0, dilation=1, groups=1, bias=False, nbit=4):
+        super(int_conv2d, self).__init__(in_channels, out_channels, kernel_size,
+                stride=stride, padding=padding, dilation=dilation, groups=groups,
+                bias=bias)
+        self.nbit = nbit
+        self.mask_original = torch.ones_like(self.weight).cuda()
+
     def forward(self, input):
         w_mean = self.weight.mean()
         weight_c = self.weight - w_mean
 
-        weight_q = int_quant_func(nbit=4, restrictRange=True)(weight_c)
+        weight_q = int_quant_func(nbit=self.nbit, restrictRange=True)(weight_c)
         
-        weight_q += w_mean
-
-        output = F.conv2d(input, weight_q, self.bias, self.stride, self.padding, self.dilation, self.groups)
+        output = F.conv2d(input, weight_q*self.mask_original, self.bias, self.stride, self.padding, self.dilation, self.groups)
+        # if not self.weight.size(2) == 1:
+        #     print(f'Weight size: {list(weight_q.size())}')
+        #     print(f'quantized input: {torch.unique(input)}')
         return output
+    
+    def extra_repr(self):
+        return super(int_conv2d, self).extra_repr() + ', nbit={}'.format(self.nbit)
+
+
+class int_linear(nn.Linear):
+    def __init__(self, in_channels, out_channels, bias=True, nbit=8):
+        super(int_linear, self).__init__(in_features=in_channels, out_features=out_channels, bias=bias)
+        self.nbit=nbit
+    
+    def forward(self, input):
+        w_mean = self.weight.mean()
+        weight_c = self.weight
+
+        # print(f'Linear layer | Input shape: {list(input.size())} | Weight shape: {list(weight_c.size())}')
+        weight_q = int_quant_func(nbit=self.nbit)(weight_c)
+
+        output = F.linear(input, weight_q, self.bias)
+        return output
+
+    def extra_repr(self):
+        return super(int_linear, self).extra_repr() + ', nbit={}'.format(self.nbit)
 
 class sawb_tern_Conv2d(nn.Conv2d):
 
@@ -239,8 +313,11 @@ class sawb_tern_Conv2d(nn.Conv2d):
 class sawb_w2_Conv2d(nn.Conv2d):
 
     def forward(self, input):
-        alpha_w = get_scale_2bit(self.weight)
+        z_typical = {'4bit': [0.077, 1.013], '8bit':[0.027, 1.114]}
+
+        # alpha_w = get_scale_2bit(self.weight)
         # alpha_w = get_scale_reg2(self.weight)
+        alpha_w = get_scale(input, z_typical['4bit']).item()
 
         weight = sawb_w2_Func(alpha=alpha_w)(self.weight)
         output = F.conv2d(input, weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
@@ -249,11 +326,25 @@ class sawb_w2_Conv2d(nn.Conv2d):
 
 
 class zero_grp_skp_quant(nn.Conv2d):
-    
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, 
+                 padding=0, dilation=1, groups=1, bias=False, nbit=2, coef=0.01, prob=0.0, skp_group=4):
+        super(zero_grp_skp_quant, self).__init__(in_channels, out_channels, kernel_size,
+                stride=stride, padding=padding, dilation=dilation, groups=groups,
+                bias=bias)
+        self.nbit = nbit
+        self.prob = prob
+        self.coef = coef
+        self.skp_group = skp_group
+
     def forward(self, input):
         weight = self.weight
 
-        weight_q = zero_skp_quant(nbit=2, coef=0.05, group_ch=16)(weight)
+        weight_q = zero_skp_quant(nbit=self.nbit, coef=self.coef, group_ch=self.skp_group, prob=self.prob)(weight)
         output = F.conv2d(input, weight_q, self.bias, self.stride, self.padding, self.dilation, self.groups)
         
         return output
+    
+    def extra_repr(self):
+        return super(zero_grp_skp_quant, self).extra_repr() + ', nbit={}, coef={}, prob={}, skp_group={}'.format(
+                self.nbit, self.coef, self.prob, self.skp_group)
+

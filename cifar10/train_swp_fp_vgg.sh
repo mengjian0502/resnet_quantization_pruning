@@ -12,9 +12,9 @@ if [ ! -d "$DIRECTORY" ]; then
 fi
 
 ############ Configurations ###############
-model=tern_resnet20
+model=vgg7
 dataset=cifar10
-epochs=200
+epochs=350
 batch_size=128
 optimizer=SGD
 group_ch=16
@@ -24,11 +24,9 @@ label_info=
 
 $PYTHON -W ignore main.py --dataset ${dataset} \
     --data_path ./dataset/   \
-    --arch ${model} --save_path ./save/resnet20/quant_scheme/sawb_2bit/decay0.0002_w2_a2_sawb_2bit_clamp_fpsc_g02 \
+    --arch ${model} --save_path ./save/vgg7/full_precision/decay0.0001_w32_a32 \
     --epochs ${epochs}  --learning_rate  0.1 \
     --optimizer ${optimizer} \
-    --schedule 60 120   --gammas 0.1 0.1\
+    --schedule 150 250   --gammas 0.1 0.1\
     --batch_size ${batch_size} --workers 4 --ngpu 1 --gpu_id 2 \
-    --print_freq 100 --decay 0.0002 \
-    --clp \
-    --a_lambda 0.01 \
+    --print_freq 100 --decay 0.0001 \

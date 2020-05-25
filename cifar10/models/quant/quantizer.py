@@ -25,6 +25,7 @@ def linear_quantize(input, scale, zero_point, inplace=False):
     if inplace:
         input.mul_(scale).sub_(zero_point).round_()
         return input
+    # print(scale)
     return torch.round(input * scale - zero_point)
 
 def linear_dequantize(input, scale, zero_point, inplace=False):
@@ -130,6 +131,7 @@ class STEQuantizer(torch.autograd.Function):
             ctx.mark_dirty(input)
 
         output = linear_quantize(input, scale, zero_point)
+        # print(f'quantized INT = {torch.unique(output)}')
         if dequantize:
             output = linear_dequantize(output, scale, zero_point)  
         return output
@@ -152,7 +154,7 @@ class STEQuantizer_weight(torch.autograd.Function):
             if len(torch.unique(output)) == 2**nbit + 1:
                 n = (2 ** nbit) / 2
                 output = output.clamp(-n, n-1)
-        # print(f'quantized INT = {len(torch.unique(output))}')
+        # print(f'quantized INT = {torch.unique(output)}')
         if dequantize:
             output = linear_dequantize(output, scale, zero_point)  
         return output
