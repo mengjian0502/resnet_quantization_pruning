@@ -14,10 +14,10 @@ fi
 ############ Configurations ###############
 model=adc_resnet20
 dataset=cifar10
-batch_size=128 
+batch_size=128
 col_size=16
 group_size=16
-adc_precision=8
+adc_precision=5
 cell_bit=2
 
 lambda_=0.001

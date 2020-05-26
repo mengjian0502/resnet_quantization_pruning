@@ -32,7 +32,7 @@ lb=0.002
 diff=0.001
 
 pretrained_model="./save/resnet20/full_precsion/decay0.0002_w32_a32_fullprecision/model_best.pth.tar"
-eval_model="./save/resnet20/iso_group_sparsity/ch16/skp_group16_4bit/decay0.0005_lambda0.002_alambda0.01_w4_a4_qsc_grp4_fl4bit_ll4bit/model_best.pth.tar"
+eval_model="./save/resnet20/iso_group_sparsity/ch16/skp_group16_4bit/decay0.0005_lambda0.001_alambda0.01_w4_a4_qsc_grp4_fl4bit_ll4bit/model_best.pth.tar"
 
 for i in $(seq ${lb} ${diff} ${ub})
 do

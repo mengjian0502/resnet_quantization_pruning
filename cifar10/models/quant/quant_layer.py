@@ -274,7 +274,8 @@ class int_conv2d(nn.Conv2d):
         output = F.conv2d(input, weight_q*self.mask_original, self.bias, self.stride, self.padding, self.dilation, self.groups)
         # if not self.weight.size(2) == 1:
         #     print(f'Weight size: {list(weight_q.size())}')
-        #     print(f'quantized input: {torch.unique(input)}')
+        #     print(f'quantized input: {list(input.size())}')
+        #     print(f'output fm size:{list(output.size())}')
         return output
     
     def extra_repr(self):

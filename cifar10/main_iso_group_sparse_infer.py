@@ -316,6 +316,9 @@ def validate(val_loader, model, criterion, log):
             top1.update(prec1.item(), input.size(0))
             top5.update(prec5.item(), input.size(0))
             
+            # print(i)
+            # if i == 0:
+            #     break
         print_log(
             '  **Test** Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f} Error@1 {error1:.3f}'.format(top1=top1, top5=top5,
                                                                                                  error1=100 - top1.avg),log)
