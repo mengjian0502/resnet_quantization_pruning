@@ -22,7 +22,7 @@ label_info=
 
 $PYTHON -W ignore main.py --dataset ${dataset} \
     --data_path ${imagenet_path}   \
-    --arch ${model} --save_path ./save/resnet18/sgd/resnet18_w2_a2_sawb_2bit \
+    --arch ${model} --save_path ./save/resnet18/sgd/resnet18_w2_a2_sawb_2bit_fully_quantized \
     --epochs ${epochs} --learning_rate 0.1 \
     --optimizer ${optimizer} \
     --schedule 30 60 85 95  --gammas 0.1 0.1 0.1 0.1 \

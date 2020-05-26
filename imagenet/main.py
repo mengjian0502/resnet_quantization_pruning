@@ -437,7 +437,7 @@ def main():
             }
 
         save_checkpoint(checkpoint_state, is_best,
-                        args.save_path, f'checkpoint_{epoch}.pth.tar', log)
+                        args.save_path, f'checkpoint.pth.tar', log)
 
         # measure elapsed time
         epoch_time.update(time.time() - start_time)
@@ -530,7 +530,6 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
             count = 0
             for m in model.modules():
                 if isinstance(m, nn.Conv2d):
-                    # if not count in [0, 5, 7, 10, 12, 15, 17]:
                     if not count in [0]:
                         w_l = m.weight
                         num_group = w_l.size(0) * w_l.size(1) // group_ch
