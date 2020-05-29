@@ -44,8 +44,6 @@ class Qconv2d(nn.Conv2d):
 
 
         if self.inference == 1:
-
-            # print(f'loaded alpha: {self.act_alpha}')
             num_sub_groups = self.col_size // self.group_size
 
             output = torch.zeros_like(output_original)
@@ -58,7 +56,6 @@ class Qconv2d(nn.Conv2d):
                 mask = torch.zeros_like(weight_q)
                 for jj in np.arange(0, weight_q.size(1)//self.group_size, num_sub_groups):
                     mask[:, (ii+jj)*self.group_size:(ii+jj+1)*self.group_size,:,:] = 1                                                                  # turn on the corresponding rows.
-                
 
                 inputQ, act_scale = activation_quant(input, nbit=bitActivation, sat_val=self.act_alpha, dequantize=False)
                 outputIN = torch.zeros_like(output)
@@ -75,9 +72,9 @@ class Qconv2d(nn.Conv2d):
 
                     for k in range (int(bitWeight/self.cellBit)):
                         if k == 0:
-                            dummyP[:,:,:,:] = 1.4
+                            dummyP[:,:,:,:] = 1  
                         elif k == 1:
-                            dummyP[:,:,:,:] = 1.4
+                            dummyP[:,:,:,:] = 1.5
 
                         remainder = torch.fmod(X_decimal, cellRange)*mask
                         X_decimal = torch.round((X_decimal-remainder)/cellRange)*mask
@@ -89,8 +86,7 @@ class Qconv2d(nn.Conv2d):
                         output_diff = outputPartial - outputDummyPartial        # subtraction of each single column
                         output_diff_quant = wage_quantizer.LinearQuantizeOut(output_diff, self.ADCprecision)
                         outputDiff = outputDiff + (output_diff_quant)*scaler
-                        # print(f'Diff after multiply with scalar: {torch.unique((output_diff_quant))}')
-                    
+
                     scalerIN = 2**z
                     outputIN = outputIN + outputDiff * scalerIN
                 output = output + outputIN/act_scale                                                                                                       # dequantize it back    
@@ -127,9 +123,6 @@ class QLinear(nn.Linear):
         output_original = F.linear(input, weight_q, self.bias)
 
         if self.inference == 1:
-            
-            # print(f'Qlinear: loaded alpha: {self.act_alpha}')
-            
             output = torch.zeros_like(output_original)
             del output_original
             cellRange = 2**self.cellBit   # cell precision is 2
@@ -156,9 +149,9 @@ class QLinear(nn.Linear):
 
                 for k in range (int(bitWeight/self.cellBit)):
                     if k == 0:
-                        dummyP[:,:] = 1.4  
+                        dummyP[:,:] = 1  
                     elif k == 1:
-                        dummyP[:,:] = 1.4
+                        dummyP[:,:] = 1.5
 
                     remainder = torch.fmod(X_decimal, cellRange)*mask
                     X_decimal = torch.round((X_decimal-remainder)/cellRange)*mask
@@ -170,7 +163,7 @@ class QLinear(nn.Linear):
 
                     scaler = cellRange**k
                     output_diff_quant = wage_quantizer.LinearQuantizeOut(output_diff, self.ADCprecision)
-                    outputDiff = outputDiff + (output_diff)*scaler
+                    outputDiff = outputDiff + (output_diff_quant)*scaler
 
                 scalerIN = 2**z
                 outputIN = outputIN + outputDiff * scalerIN

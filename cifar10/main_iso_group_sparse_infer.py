@@ -18,6 +18,7 @@ from utils_.utils import AverageMeter, RecorderMeter, time_string, convert_secs2
 from utils_.reorganize_param import reorganize_param
 from utils_.model_summary import summary
 from models.quant import int_conv2d, int_quant_func, Qconv2d, QLinear
+from torchsummary import summary
 import csv
 
 # from torch.utils.tensorboard import SummaryWriter
@@ -266,6 +267,7 @@ def main():
             "=> do not use any checkpoint for {} model".format(args.arch), log)
 
     if args.evaluate:
+        # summary(net, (3,32,32))
         validate(test_loader, net, criterion, log)
         return
 
@@ -284,18 +286,30 @@ def validate(val_loader, model, criterion, log):
                 print(f'alpha:{param.item()} | name: {name}')
                 alpha.append(param.item())
         count = 0
+        # ========for ResNet ============#
+        # for m in model.modules():
+        #     if isinstance(m, Qconv2d):
+        #         if count == 0:
+        #             m.act_alpha = alpha[-1]
+        #             m.layer_idx = count
+        #         else:
+        #             m.layer_idx = count
+        #             m.act_alpha = alpha[count-1]
+        #         count += 1
+
+        #     if isinstance(m, QLinear):
+        #         m.act_alpha = alpha[count-1]
+
+        # ========for VGG ============#
         for m in model.modules():
             if isinstance(m, Qconv2d):
-                if count == 0:
-                    m.act_alpha = alpha[-1]
-                    m.layer_idx = count
-                else:
-                    m.layer_idx = count
-                    m.act_alpha = alpha[count-1]
+                m.layer_idx = count
+                m.act_alpha = alpha[count]
                 count += 1
 
             if isinstance(m, QLinear):
-                m.act_alpha = alpha[count-1]
+                m.act_alpha = alpha[count]
+                count += 1
 
     with torch.no_grad():
         for i, (input, target) in enumerate(val_loader):

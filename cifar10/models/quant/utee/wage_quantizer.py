@@ -194,7 +194,10 @@ def LinearQuantizeOut(x, bit):
     index = torch.clamp(torch.round((x-minQ.item())/stepSize), 0, (2.**(bit)-1))
     y = index*stepSize + minQ.item()
 
-    return y
+    if x.mean() == 0 and x.std() == 0:
+        return x
+    else:
+        return y
 
 
 class WAGERounding(Function):

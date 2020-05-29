@@ -8,5 +8,6 @@ from .ResNet_cifar_vanilla import resnet20, resnet32, resnet44, resnet56, resnet
 from .preresnet import preresnet20
 from .vgg16 import vgg16bn_cifar
 from .vgg import vgg7, vgg7_quant
+from .vgg_adcinfer import vgg7_adc
 
 from .resnet_vanilla import resnet18

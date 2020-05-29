@@ -90,12 +90,11 @@ class sawb_ternFunc(torch.autograd.Function):
         return grad_input
 
 class zero_skp_quant(torch.autograd.Function):
-    def __init__(self, nbit, coef, group_ch, prob):
+    def __init__(self, nbit, coef, group_ch):
         super(zero_skp_quant, self).__init__()
         self.nbit = nbit
         self.coef = coef
         self.group_ch = group_ch
-        self.prob = prob
     
     def forward(self, input):
         self.save_for_backward(input)
@@ -156,6 +155,7 @@ class ClippedReLU(nn.Module):
         self.dequantize = dequantize
         
     def forward(self, input):
+        # print(f'ClippedRELU: input mean: {input.mean()} | input std: {input.std()}')
         input = F.relu(input)
         input = torch.where(input < self.alpha, input, self.alpha)
         
@@ -256,31 +256,56 @@ class int_quant_func(torch.autograd.Function):
         grad_input[input.le(-1)] = 0
         return grad_input
 
-class int_conv2d(nn.Conv2d):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, 
-                 padding=0, dilation=1, groups=1, bias=False, nbit=4):
-        super(int_conv2d, self).__init__(in_channels, out_channels, kernel_size,
-                stride=stride, padding=padding, dilation=dilation, groups=groups,
-                bias=bias)
-        self.nbit = nbit
-        self.mask_original = torch.ones_like(self.weight).cuda()
+# class int_conv2d(nn.Conv2d):
+#     def __init__(self, in_channels, out_channels, kernel_size, stride=1, 
+#                  padding=0, dilation=1, groups=1, bias=False, nbit=4):
+#         super(int_conv2d, self).__init__(in_channels, out_channels, kernel_size,
+#                 stride=stride, padding=padding, dilation=dilation, groups=groups,
+#                 bias=bias)
+#         self.nbit = nbit
+#         self.mask_original = torch.ones_like(self.weight).cuda()
 
+#     def forward(self, input):
+#         w_mean = self.weight.mean()
+#         weight_c = self.weight - w_mean
+
+#         weight_q = int_quant_func(nbit=self.nbit, restrictRange=True)(weight_c)
+        
+#         output = F.conv2d(input, weight_q*self.mask_original, self.bias, self.stride, self.padding, self.dilation, self.groups)
+#         if not self.weight.size(2) == 1:
+#             print(f'Weight size: {list(weight_q.size())}')
+#             print(f'input size:: {list(input.size())}')
+#             print(f'output fm size:{list(output.size())}')
+#             print("========================")
+#         # else:
+#         #     print("========================")
+#         #     print('Residual!')
+#         #     print(f'Weight size: {list(weight_q.size())}')
+#         #     print(f'input size:: {list(input.size())}')
+#         #     print(f'output fm size:{list(output.size())}')
+#         #     print("========================")
+#         return output
+    
+#     def extra_repr(self):
+#         return super(int_conv2d, self).extra_repr() + ', nbit={}'.format(self.nbit)
+
+class int_conv2d(nn.Conv2d):
     def forward(self, input):
         w_mean = self.weight.mean()
         weight_c = self.weight - w_mean
 
-        weight_q = int_quant_func(nbit=self.nbit, restrictRange=True)(weight_c)
+        weight_q = int_quant_func(nbit=4, restrictRange=True)(weight_c)
         
-        output = F.conv2d(input, weight_q*self.mask_original, self.bias, self.stride, self.padding, self.dilation, self.groups)
+        output = F.conv2d(input, weight_q, self.bias, self.stride, self.padding, self.dilation, self.groups)
+        out_temp = F.conv2d(input, weight_q)
+
         # if not self.weight.size(2) == 1:
         #     print(f'Weight size: {list(weight_q.size())}')
-        #     print(f'quantized input: {list(input.size())}')
+        #     print(f'input size: {list(input.size())}')
         #     print(f'output fm size:{list(output.size())}')
+        #     print(f'raw output size: {list(out_temp.size())}')
+        #     print("========================")
         return output
-    
-    def extra_repr(self):
-        return super(int_conv2d, self).extra_repr() + ', nbit={}'.format(self.nbit)
-
 
 class int_linear(nn.Linear):
     def __init__(self, in_channels, out_channels, bias=True, nbit=8):
@@ -295,6 +320,11 @@ class int_linear(nn.Linear):
         weight_q = int_quant_func(nbit=self.nbit)(weight_c)
 
         output = F.linear(input, weight_q, self.bias)
+
+        # print(f'Weight size: {list(weight_q.size())}')
+        # print(f'input size:: {list(input.size())}')
+        # print(f'output fm size:{list(output.size())}')
+        # print("========================")
         return output
 
     def extra_repr(self):
@@ -328,24 +358,23 @@ class sawb_w2_Conv2d(nn.Conv2d):
 
 class zero_grp_skp_quant(nn.Conv2d):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, 
-                 padding=0, dilation=1, groups=1, bias=False, nbit=2, coef=0.01, prob=0.0, skp_group=4):
+                 padding=0, dilation=1, groups=1, bias=False, nbit=2, coef=0.05, skp_group=8):
         super(zero_grp_skp_quant, self).__init__(in_channels, out_channels, kernel_size,
                 stride=stride, padding=padding, dilation=dilation, groups=groups,
                 bias=bias)
         self.nbit = nbit
-        self.prob = prob
         self.coef = coef
         self.skp_group = skp_group
 
     def forward(self, input):
         weight = self.weight
 
-        weight_q = zero_skp_quant(nbit=self.nbit, coef=self.coef, group_ch=self.skp_group, prob=self.prob)(weight)
+        weight_q = zero_skp_quant(nbit=self.nbit, coef=self.coef, group_ch=self.skp_group)(weight)
         output = F.conv2d(input, weight_q, self.bias, self.stride, self.padding, self.dilation, self.groups)
         
         return output
     
     def extra_repr(self):
-        return super(zero_grp_skp_quant, self).extra_repr() + ', nbit={}, coef={}, prob={}, skp_group={}'.format(
-                self.nbit, self.coef, self.prob, self.skp_group)
+        return super(zero_grp_skp_quant, self).extra_repr() + ', nbit={}, coef={}, skp_group={}'.format(
+                self.nbit, self.coef, self.skp_group)
 

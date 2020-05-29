@@ -17,6 +17,7 @@ from collections import OrderedDict
 from utils_.utils import AverageMeter, RecorderMeter, time_string, convert_secs2time
 from utils_.reorganize_param import reorganize_param
 from utils_.model_summary import summary
+from torchsummary import summary
 import csv
 
 # from torch.utils.tensorboard import SummaryWriter
@@ -354,6 +355,7 @@ def main():
             "=> do not use any checkpoint for {} model".format(args.arch), log)
 
     if args.evaluate:
+        summary(net, (3,32,32))
         validate(test_loader, net, criterion, log)
         return
 

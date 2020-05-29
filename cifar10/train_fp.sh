@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 
-PYTHON="/home/mengjian/anaconda3/bin/python3"
+PYTHON="/home/mengjian/anaconda3/envs/neurosim_test/bin/python3"
 
 ############ directory to save result #############
 DATE=`date +%Y-%m-%d`
@@ -12,12 +12,12 @@ if [ ! -d "$DIRECTORY" ]; then
 fi
 
 ############ Configurations ###############
-model=tern_resnet20
+model=vgg7
 dataset=cifar10
 epochs=200
 batch_size=128
 optimizer=SGD
-wd=0.0002
+wd=0.0005
 # a_lambda=0.01
 
 eval_model="./save/resnet20/full_precsion/decay0.0002_w32_a32_fullprecision/model_best.pth.tar"

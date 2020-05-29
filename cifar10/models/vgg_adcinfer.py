@@ -5,7 +5,7 @@
 
 import math
 import torch.nn as nn
-from .quant import ClippedReLU, int_conv2d, int_linear
+from .quant import ClippedReLU, int_conv2d, int_linear, Qconv2d, QLinear
 
 
 # __all__ = ['vgg7']
@@ -27,14 +27,18 @@ def make_layers(cfg, batch_norm=False):
     return nn.Sequential(*layers)
 
 
-def make_layers_quant(cfg, batch_norm=False):
+def make_layers_quant(cfg, batch_norm=False, col_size=16, group_size=16, ADCprecision=5, cellBit=2):
     layers = list()
     in_channels = 3
-    for v in cfg:
+    for idx, v in enumerate(cfg):
         if v == 'M':
             layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
         else:
-            conv2d = int_conv2d(in_channels, v, kernel_size=3, padding=1)
+            if idx == 0:
+                conv2d = int_conv2d(in_channels, v, kernel_size=3, padding=1)
+            else: 
+                conv2d = Qconv2d(in_channels, v, kernel_size=3, padding=1, col_size=col_size, 
+                                group_size=group_size, wl_input=4,wl_weight=4,inference=1,cellBit=cellBit,ADCprecision=ADCprecision)
             if batch_norm:
                 layers += [conv2d, nn.BatchNorm2d(v), ClippedReLU(num_bits=4, alpha=10, inplace=True)]
             else:
@@ -85,15 +89,18 @@ class VGG(nn.Module):
         return x
 
 
-class VGG_quant(nn.Module):
-    def __init__(self, num_classes=10, depth=16, batch_norm=False):
-        super(VGG_quant, self).__init__()
-        self.features = make_layers_quant(cfg[depth], batch_norm)
+class VGG_adc_quant(nn.Module):
+    def __init__(self, num_classes=10, depth=16, batch_norm=False, col_size=16, group_size=16, ADCprecision=5, cellBit=2):
+        super(VGG_adc_quant, self).__init__()
+        self.features = make_layers_quant(cfg[depth], batch_norm, col_size=col_size, 
+                                group_size=group_size, cellBit=cellBit,ADCprecision=ADCprecision)
         if depth == 7:
             self.classifier = nn.Sequential(
-                int_linear(8192, 1024),
+                QLinear(8192, 1024, col_size=col_size, 
+                                group_size=group_size, wl_input=4,wl_weight=4,inference=1,cellBit=cellBit,ADCprecision=ADCprecision),
                 ClippedReLU(num_bits=4, alpha=10, inplace=True),
-                int_linear(1024, num_classes),
+                QLinear(1024, num_classes, col_size=col_size, 
+                                group_size=group_size, wl_input=4,wl_weight=4,inference=1,cellBit=cellBit,ADCprecision=ADCprecision),
             )
         else:
             self.classifier = nn.Sequential(
@@ -122,6 +129,7 @@ def vgg7(num_classes=10):
     model = VGG(num_classes=num_classes, depth=7, batch_norm=True)
     return model
 
-def vgg7_quant(num_classes=10):
-    model = VGG_quant(num_classes=num_classes, depth=7, batch_norm=True)
+def vgg7_adc(num_classes=10, col_size=16, group_size=16, ADCprecision=5, cellBit=2):
+    model = VGG_adc_quant(num_classes=num_classes, depth=7, batch_norm=True, col_size=col_size, 
+                    group_size=group_size, cellBit=cellBit,ADCprecision=ADCprecision)
     return model

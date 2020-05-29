@@ -429,7 +429,7 @@ def main():
             }
 
         save_checkpoint(checkpoint_state, is_best,
-                        args.save_path, 'checkpoint.pth.tar', log)
+                        args.save_path, f'checkpoint.pth.tar', log)
 
         # measure elapsed time
         epoch_time.update(time.time() - start_time)
@@ -467,7 +467,8 @@ def glasso(var, dim=0):
 
 
 def glasso_thre(var, dim=0):
-    var = var.contiguous().view((var.size(0), var.size(1) * var.size(2) * var.size(3)))
+    if len(var.size()) == 4:
+        var = var.contiguous().view((var.size(0), var.size(1) * var.size(2) * var.size(3)))
 
     a = var.pow(2).sum(dim=dim).pow(1/2)
     mean_a  = a.mean()
@@ -537,11 +538,13 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
             reg_g2 = torch.tensor(0.).cuda()
             reg_g3 = torch.tensor(0.).cuda()
             reg_g4 = torch.tensor(0.).cuda()
+            reg_linear = torch.tensor(0.).cuda()
 
             group_ch = args.group_ch
 
             # == group-wise defined
             count = 0
+            linear_count=0
             for m in model.modules():
                 if isinstance(m, nn.Conv2d):
                     if not count in [0]:
@@ -556,14 +559,20 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
 
                         # reg_g1 += glasso_thre(w_l[:, :group_ch//2, :, :], 1) # 8x3x3
                         # reg_g2 += glasso_thre(w_l[:, group_ch//2:, :, :], 1)
-
                         reg_g1 += glasso_thre(w_l[:, :group_ch//4, :, :], 1)
                         reg_g2 += glasso_thre(w_l[:, group_ch//4:2*group_ch//4, :, :], 1)
                         reg_g3 += glasso_thre(w_l[:, 2*group_ch//4:3*group_ch//4, :, :], 1)
                         reg_g4 += glasso_thre(w_l[:, 3*group_ch//4:, :, :], 1)
-
                     count += 1
-            loss += lamda * (reg_g1 + reg_g2 + reg_g3 + reg_g4)
+
+                if isinstance(m, nn.Linear):
+                    if linear_count in [0]:
+                        w_f = m.weight
+                        reg_linear += glasso_thre(w_f, 1)
+                        # print(f'pruning linear layer: {linear_count}')
+                        linear_count += 1
+
+            loss += lamda * (reg_g1 + reg_g2 + reg_g3 + reg_g4 + reg_linear)
 
         if args.clp:
             reg_alpha = torch.tensor(0.).cuda()
@@ -680,9 +689,13 @@ def validate(val_loader, model, criterion, log):
     # switch to evaluate mode
     model.eval()
 
-    if args.evaluate and args.mismatch_elim:
-        print_log(f'mismatch elimination...', log)
-        mismatch_elim(model, log)
+    # if args.evaluate and args.mismatch_elim:
+    #     print_log(f'mismatch elimination...', log)
+    #     mismatch_elim(model, log)
+
+    # for name, param in model.named_parameters():
+    #     if 'alpha' in name:
+    #         print(f'alpha:{param.item()} | name: {name}')
 
     with torch.no_grad():
         for i, (input, target) in enumerate(val_loader):
@@ -698,13 +711,11 @@ def validate(val_loader, model, criterion, log):
             losses.update(loss.item(), input.size(0))
             top1.update(prec1.item(), input.size(0))
             top5.update(prec5.item(), input.size(0))
-        
-            if i == 0:
-                break
 
         print_log(
             '  **Test** Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f} Error@1 {error1:.3f}'.format(top1=top1, top5=top5,
                                                                                                  error1=100 - top1.avg),log)
+            
 
     return top1.avg, losses.avg
 

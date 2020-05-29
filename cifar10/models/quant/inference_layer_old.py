@@ -44,8 +44,6 @@ class Qconv2d(nn.Conv2d):
 
 
         if self.inference == 1:
-
-            # print(f'loaded alpha: {self.act_alpha}')
             num_sub_groups = self.col_size // self.group_size
 
             output = torch.zeros_like(output_original)
@@ -58,7 +56,8 @@ class Qconv2d(nn.Conv2d):
                 mask = torch.zeros_like(weight_q)
                 for jj in np.arange(0, weight_q.size(1)//self.group_size, num_sub_groups):
                     mask[:, (ii+jj)*self.group_size:(ii+jj+1)*self.group_size,:,:] = 1                                                                  # turn on the corresponding rows.
-                
+
+                # print(f'Layer: {self.layer_idx}, 4 bit input activation: {torch.unique(input)} | Num levels: {len(torch.unique(input))}')
 
                 inputQ, act_scale = activation_quant(input, nbit=bitActivation, sat_val=self.act_alpha, dequantize=False)
                 outputIN = torch.zeros_like(output)
@@ -69,30 +68,41 @@ class Qconv2d(nn.Conv2d):
                     outputP = torch.zeros_like(output)                    
                     X_decimal = weight_int*mask                                                                                                              # multiply the quantized integer weight with the corresponding mask
                     outputD = torch.zeros_like(output)
-                    outputDiff = torch.zeros_like(output)
 
                     dummyP = torch.zeros_like(weight_q)
+                    dummyP[:,:] = 7
 
                     for k in range (int(bitWeight/self.cellBit)):
-                        if k == 0:
-                            dummyP[:,:,:,:] = 1.4
-                        elif k == 1:
-                            dummyP[:,:,:,:] = 1.4
+                        # if k == 0:
+                        #     dummyP[:,:,:,:] = 1  
+                        # elif k == 1:
+                        #     dummyP[:,:,:,:] = 1
+                        # elif k == 2:
+                        #     dummyP[:,:,:,:] = 1
+                        # elif k == 3:
+                        #     dummyP[:,:,:,:] = 0
 
                         remainder = torch.fmod(X_decimal, cellRange)*mask
                         X_decimal = torch.round((X_decimal-remainder)/cellRange)*mask
                         
                         outputPartial= F.conv2d(inputB, remainder, self.bias, self.stride, self.padding, self.dilation, self.groups)                      # Binarized convolution
-                        outputDummyPartial = F.conv2d(inputB, dummyP*mask, self.bias, self.stride, self.padding, self.dilation, self.groups) 
+
+                        # Add ADC quanization effects here !!!
+                        outputPartialQ = wage_quantizer.LinearQuantizeOut(outputPartial, self.ADCprecision)
+                        # print(f'outputPartialQ={outputPartialQ}')
 
                         scaler = cellRange**k
-                        output_diff = outputPartial - outputDummyPartial        # subtraction of each single column
-                        output_diff_quant = wage_quantizer.LinearQuantizeOut(output_diff, self.ADCprecision)
-                        outputDiff = outputDiff + (output_diff_quant)*scaler
-                        # print(f'Diff after multiply with scalar: {torch.unique((output_diff_quant))}')
-                    
+                        outputP = outputP + outputPartialQ*scaler
+
+                    outputDummyPartial = F.conv2d(inputB, dummyP*mask, self.bias, self.stride, self.padding, self.dilation, self.groups) 
+                    outputDummyPartialQ = wage_quantizer.LinearQuantizeOut(outputDummyPartial, self.ADCprecision)
+
+                    # sparsity = 1 - np.count_nonzero(inputB.cpu().numpy())/(inputB.size(0)*inputB.size(1)*inputB.size(2)*inputB.size(3))
+                    # print(f'sparsity of inputB: {sparsity}')
+
+                    outputD = outputD + outputDummyPartialQ
                     scalerIN = 2**z
-                    outputIN = outputIN + outputDiff * scalerIN
+                    outputIN = outputIN + (outputP - outputD)*scalerIN
                 output = output + outputIN/act_scale                                                                                                       # dequantize it back    
             output = output/w_scale
         return output         
@@ -127,15 +137,13 @@ class QLinear(nn.Linear):
         output_original = F.linear(input, weight_q, self.bias)
 
         if self.inference == 1:
-            
-            # print(f'Qlinear: loaded alpha: {self.act_alpha}')
-            
             output = torch.zeros_like(output_original)
             del output_original
             cellRange = 2**self.cellBit   # cell precision is 2
 
             # dummy crossbar
             dummyP = torch.zeros_like(weight_q)
+            dummyP[:,:] = 7
 
             # since fc weight size is relatively small => Directly generate output
             mask=torch.zeros_like(weight_q)
@@ -152,28 +160,27 @@ class QLinear(nn.Linear):
                 X_decimal = weight_int * mask                                                                                   # multiply the quantized integer weight with the corresponding mask
                 outputP = torch.zeros_like(output)
                 outputD = torch.zeros_like(output)
-                outputDiff = torch.zeros_like(output)
 
                 for k in range (int(bitWeight/self.cellBit)):
-                    if k == 0:
-                        dummyP[:,:] = 1.4  
-                    elif k == 1:
-                        dummyP[:,:] = 1.4
-
                     remainder = torch.fmod(X_decimal, cellRange)*mask
                     X_decimal = torch.round((X_decimal-remainder)/cellRange)*mask
 
                     outputPartial= F.linear(inputB, remainder*mask, self.bias)
-                    outputDummyPartial = F.linear(inputB, dummyP*mask, self.bias)
 
-                    output_diff = outputPartial - outputDummyPartial
+                    # Add ADC quanization effects here !!!
+                    outputPartialQ = wage_quantizer.LinearQuantizeOut(outputPartial, self.ADCprecision)
+                    # print(self.ADCprecision)
 
                     scaler = cellRange**k
-                    output_diff_quant = wage_quantizer.LinearQuantizeOut(output_diff, self.ADCprecision)
-                    outputDiff = outputDiff + (output_diff)*scaler
+                    outputP = outputP + outputPartialQ*scaler
+                
+                outputDummyPartial= F.linear(inputB, dummyP*mask, self.bias)
+                # print(f'Linear layer outputDummyPartial: {torch.unique(outputDummyPartial)}')
+                outputDummyPartialQ = wage_quantizer.LinearQuantizeOut(outputDummyPartial, self.ADCprecision)
+                outputD = outputD + outputDummyPartialQ
 
                 scalerIN = 2**z
-                outputIN = outputIN + outputDiff * scalerIN
+                outputIN = outputIN + (outputP - outputD)*scalerIN    
             output = output + outputIN/act_scale
         output = output/w_scale
         return output
