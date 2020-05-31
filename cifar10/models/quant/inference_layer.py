@@ -72,7 +72,7 @@ class Qconv2d(nn.Conv2d):
                     outputDiff = torch.zeros_like(output)
 
                     dummyP = torch.zeros_like(weight_q)
-
+                
                     for k in range (int(bitWeight/self.cellBit)):
                         if k == 0:
                             dummyP[:,:,:,:] = 1.4
