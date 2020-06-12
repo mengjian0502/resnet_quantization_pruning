@@ -32,6 +32,7 @@ from logger import Logger
 model_names = sorted(name for name in models.__dict__
                      if name.islower() and not name.startswith("__")
                      and callable(models.__dict__[name]))
+print(model_names)
 
 ################# Options ##################################################
 ############################################################################
@@ -477,7 +478,7 @@ def get_alpha(model):
     for m in model.modules():
         if isinstance(m, nn.Conv2d):
             if not count in [0] and not m.weight.size(2)==1:
-                alpha.append(m.beta)
+                alpha.append(m.alpha_w)
             count += 1
     return alpha
 
@@ -582,11 +583,11 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
             reg_beta = torch.tensor(0.).cuda()
             b_lambda = torch.tensor(args.b_lambda).cuda()
 
-            beta = []
+            qcoef_ = []
             for name, param in model.named_parameters():
-                if 'beta' in name and args.w_clp:
-                    beta.append(param.item())
-                    reg_beta += param.item() ** 2
+                if 'qcoef' in name:
+                    qcoef_.append(param.detach().cpu().numpy())
+                    reg_beta += param.norm(p=2) ** 2
             loss += b_lambda * (reg_beta)
         
         # # ============ add group lasso ============#
@@ -621,7 +622,7 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
         log)
 
     if args.w_clp:
-        print(f"beta: {beta}")
+        print(f"qcoef: {qcoef_}")
     if args.clp:
         return top1.avg, losses.avg, alpha
     else:

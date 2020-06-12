@@ -13,15 +13,15 @@ if [ ! -d "$DIRECTORY" ]; then
 fi
 
 ############ Configurations ###############
-model=tern_resnet20
+model=resnet20_lq
 dataset=cifar10
 epochs=200
 batch_size=128
 optimizer=SGD
 group_ch=16
 
-ub=0.001
-lb=0.001
+ub=0.002
+lb=0.002
 diff=0.001
 
 # add more labels as additional info into the saving path
@@ -31,9 +31,9 @@ pretrained_model="./save/resnet20/w4_a4_quant_baseline/decay0.0005_w4_a4_fullpre
 
 for i in $(seq ${lb} ${diff} ${ub})
 do
-    $PYTHON -W ignore main.py --dataset ${dataset} \
+    $PYTHON -W ignore main_LQ.py --dataset ${dataset} \
         --data_path ./dataset/   \
-        --arch ${model} --save_path ./save/resnet20/learnable_quant/ch${group_ch}/decay0.0005_lambda${i}_w4_a4_swpTrue_resumeTrue_qsc_symm_from_quant_pactw \
+        --arch ${model} --save_path ./save/resnet20/learnable_quant/ch${group_ch}/decay0.0005_lambda${i}_w4_a4_swpTrue_resumeTrue_qsc_symm_from_quant_tanh \
         --epochs ${epochs}  --learning_rate  0.01 \
         --optimizer ${optimizer} \
         --schedule 80 120 160   --gammas 0.1 0.1 0.5 \
@@ -42,9 +42,9 @@ do
         --lamda ${i}   --ratio 0.7 \
         --resume ${pretrained_model} \
         --clp \
-        --a_lambda 0.01 \
+        --a_lambda 0.001 \
         --w_clp \
-        --b_lambda 0.001 \
+        --b_lambda 0.0005 \
         --fine_tune \
         --swp \
 	    --group_ch ${group_ch}

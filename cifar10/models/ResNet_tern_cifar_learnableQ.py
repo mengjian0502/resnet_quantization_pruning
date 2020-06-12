@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import init
-from .quant import clamp_conv2d, ClippedReLU, int_conv2d, zero_grp_skp_quant, sawb_w2_Conv2d, int_linear, PACT_conv2d
+from .quant import clamp_conv2d, ClippedReLU, int_conv2d, zero_grp_skp_quant, sawb_w2_Conv2d, int_linear, LearnbaleQuantConv2d
 import math
 
 class DownsampleA(nn.Module):
@@ -26,18 +26,13 @@ class ResNetBasicblock(nn.Module):
     super(ResNetBasicblock, self).__init__() 
     # self.conv_a = nn.Conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)  # quantization
     # self.conv_a = int_conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)  # quantization
-    self.conv_a = PACT_conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)  # quantization
-    # self.conv_a = sawb_w2_Conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)  # quantization (SAWB)
-    # self.conv_a = zero_grp_skp_quant(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
+    self.conv_a = LearnbaleQuantConv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)  # quantization
     self.bn_a = nn.BatchNorm2d(planes)
     self.relu1 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
     # self.relu1 = nn.ReLU(inplace=True)
 
     # self.conv_b = int_conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # quantization
-    self.conv_b = PACT_conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # quantization
-    # self.conv_b = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # quantization
-    # self.conv_b = sawb_w2_Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # quantization
-    # self.conv_b = zero_grp_skp_quant(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)
+    self.conv_b = LearnbaleQuantConv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)  # quantization
     self.bn_b = nn.BatchNorm2d(planes)
     self.relu2 = ClippedReLU(num_bits=4, alpha=10, inplace=True)    # Clipped ReLU function 4 - bits
     # self.relu2 = nn.ReLU(inplace=True)
@@ -90,7 +85,7 @@ class CifarResNet(nn.Module):
     self.avgpool = nn.AvgPool2d(8)
     self.classifier = nn.Linear(64*block.expansion, num_classes)
     self.classifier = int_linear(64*block.expansion, num_classes, nbit=4)
-    # self.relu0 = ClippedReLU(num_bits=4, alpha=10, inplace=True)
+    self.relu0 = ClippedReLU(num_bits=4, alpha=10, inplace=True) 
 
     for m in self.modules():
       if isinstance(m, nn.Conv2d):
@@ -108,7 +103,7 @@ class CifarResNet(nn.Module):
     downsample = None
     if stride != 1 or self.inplanes != planes * block.expansion:
       downsample = nn.Sequential(
-        int_conv2d(self.inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=False),
+        LearnbaleQuantConv2d(self.inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=False),
         nn.BatchNorm2d(planes * block.expansion),
         )
       # downsample = DownsampleA(self.inplanes, planes * block.expansion, stride)
@@ -123,8 +118,8 @@ class CifarResNet(nn.Module):
 
   def forward(self, x):
     x = self.conv_1_3x3(x)
-    x = F.relu(self.bn_1(x), inplace=True)
-    # x = self.relu0(self.bn_1(x))
+    # x = F.relu(self.bn_1(x), inplace=True)
+    x = self.relu0(self.bn_1(x))
     x = self.stage_1(x)
     x = self.stage_2(x)
     x = self.stage_3(x)
@@ -133,7 +128,7 @@ class CifarResNet(nn.Module):
     return self.classifier(x)
 
 
-def tern_resnet20(num_classes=10):
+def resnet20_lq(num_classes=10):
   """Constructs a ResNet-20 model for CIFAR-10 (by default)
   Args:
     num_classes (uint): number of classes
@@ -142,37 +137,37 @@ def tern_resnet20(num_classes=10):
   return model
 
 
-def tern_resnet32(num_classes=10):
-  """Constructs a ResNet-32 model for CIFAR-10 (by default)
-  Args:
-    num_classes (uint): number of classes
-  """
-  model = CifarResNet(ResNetBasicblock, 32, num_classes)
-  return model
+# def tern_resnet32(num_classes=10):
+#   """Constructs a ResNet-32 model for CIFAR-10 (by default)
+#   Args:
+#     num_classes (uint): number of classes
+#   """
+#   model = CifarResNet(ResNetBasicblock, 32, num_classes)
+#   return model
 
 
-def tern_resnet44(num_classes=10):
-  """Constructs a ResNet-44 model for CIFAR-10 (by default)
-  Args:
-    num_classes (uint): number of classes
-  """
-  model = CifarResNet(ResNetBasicblock, 44, num_classes)
-  return model
+# def tern_resnet44(num_classes=10):
+#   """Constructs a ResNet-44 model for CIFAR-10 (by default)
+#   Args:
+#     num_classes (uint): number of classes
+#   """
+#   model = CifarResNet(ResNetBasicblock, 44, num_classes)
+#   return model
 
 
-def tern_resnet56(num_classes=10):
-  """Constructs a ResNet-56 model for CIFAR-10 (by default)
-  Args:
-    num_classes (uint): number of classes
-  """
-  model = CifarResNet(ResNetBasicblock, 56, num_classes)
-  return model
+# def tern_resnet56(num_classes=10):
+#   """Constructs a ResNet-56 model for CIFAR-10 (by default)
+#   Args:
+#     num_classes (uint): number of classes
+#   """
+#   model = CifarResNet(ResNetBasicblock, 56, num_classes)
+#   return model
 
-def tern_resnet110(num_classes=10):
-  """Constructs a ResNet-110 model for CIFAR-10 (by default)
-  Args:
-    num_classes (uint): number of classes
-  """
-  model = CifarResNet(ResNetBasicblock, 110, num_classes)
-  return model
+# def tern_resnet110(num_classes=10):
+#   """Constructs a ResNet-110 model for CIFAR-10 (by default)
+#   Args:
+#     num_classes (uint): number of classes
+#   """
+#   model = CifarResNet(ResNetBasicblock, 110, num_classes)
+#   return model
 

@@ -69,7 +69,6 @@ def quantizer(num_bits, saturation_min, saturation_max,
 
 def symmetric_linear_quantization_params(num_bits, saturation_val, restrict_qrange=False):
     is_scalar, sat_val = to_tensor(saturation_val)
-
     if any(sat_val < 0):
         raise ValueError('Saturation value must be >= 0')
 
@@ -164,6 +163,5 @@ class STEQuantizer_weight(torch.autograd.Function):
         """
         Straight Through Estimator
         """
-        
-        return grad_output, None, None, None, None
+        return grad_output, None, None, None, None, None, None
 
