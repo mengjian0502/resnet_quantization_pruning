@@ -287,29 +287,29 @@ def validate(val_loader, model, criterion, log):
                 alpha.append(param.item())
         count = 0
         # ========for ResNet ============#
-        # for m in model.modules():
-        #     if isinstance(m, Qconv2d):
-        #         if count == 0:
-        #             m.act_alpha = alpha[-1]
-        #             m.layer_idx = count
-        #         else:
-        #             m.layer_idx = count
-        #             m.act_alpha = alpha[count-1]
-        #         count += 1
-
-        #     if isinstance(m, QLinear):
-        #         m.act_alpha = alpha[count-1]
-
-        # ========for VGG ============#
         for m in model.modules():
             if isinstance(m, Qconv2d):
-                m.layer_idx = count
-                m.act_alpha = alpha[count]
+                if count == 0:
+                    m.act_alpha = alpha[-1]
+                    m.layer_idx = count
+                else:
+                    m.layer_idx = count
+                    m.act_alpha = alpha[count-1]
                 count += 1
 
             if isinstance(m, QLinear):
-                m.act_alpha = alpha[count]
-                count += 1
+                m.act_alpha = alpha[count-1]
+
+        # # ========for VGG ============#
+        # for m in model.modules():
+        #     if isinstance(m, Qconv2d):
+        #         m.layer_idx = count
+        #         m.act_alpha = alpha[count]
+        #         count += 1
+
+        #     if isinstance(m, QLinear):
+        #         m.act_alpha = alpha[count]
+        #         count += 1
 
     with torch.no_grad():
         for i, (input, target) in enumerate(val_loader):
@@ -331,8 +331,8 @@ def validate(val_loader, model, criterion, log):
             top5.update(prec5.item(), input.size(0))
             
             # print(i)
-            # if i == 0:
-            #     break
+            if prec1==0:
+                break
         print_log(
             '  **Test** Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f} Error@1 {error1:.3f}'.format(top1=top1, top5=top5,
                                                                                                  error1=100 - top1.avg),log)

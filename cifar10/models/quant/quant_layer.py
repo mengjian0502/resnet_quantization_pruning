@@ -248,7 +248,7 @@ class int_quant_func(torch.autograd.Function):
         output = STEQuantizer_weight.apply(output, scale, zero_point, True, False, self.nbit, self.restrictRange)
 
         return output
-    
+
     def backward(self, grad_output):
         grad_input = grad_output.clone()
         input, = self.saved_tensors
@@ -256,56 +256,48 @@ class int_quant_func(torch.autograd.Function):
         grad_input[input.le(-1)] = 0
         return grad_input
 
-# class int_conv2d(nn.Conv2d):
-#     def __init__(self, in_channels, out_channels, kernel_size, stride=1, 
-#                  padding=0, dilation=1, groups=1, bias=False, nbit=4):
-#         super(int_conv2d, self).__init__(in_channels, out_channels, kernel_size,
-#                 stride=stride, padding=padding, dilation=dilation, groups=groups,
-#                 bias=bias)
-#         self.nbit = nbit
-#         self.mask_original = torch.ones_like(self.weight).cuda()
+class int_conv2d(nn.Conv2d):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, 
+                 padding=0, dilation=1, groups=1, bias=False, nbit=4):
+        super(int_conv2d, self).__init__(in_channels, out_channels, kernel_size,
+                stride=stride, padding=padding, dilation=dilation, groups=groups,
+                bias=bias)
+        self.nbit = nbit
+        self.mask_original = torch.ones_like(self.weight).cuda()
 
+    def forward(self, input):
+        w_mean = self.weight.mean()
+        weight_c = self.weight - w_mean
+        
+        z_typical = {'4bit': [0.077, 1.013], '8bit':[0.027, 1.114]}                 # c1, c2 from the typical distribution (4bit)
+        alpha_w = get_scale(weight_c, z_typical['4bit']).item()
+        self.alpha_w = alpha_w
+
+        weight_q = int_quant_func(nbit=self.nbit, restrictRange=True)(weight_c)
+
+        output = F.conv2d(input, weight_q*self.mask_original, self.bias, self.stride, self.padding, self.dilation, self.groups)
+        return output
+    
+    def extra_repr(self):
+        return super(int_conv2d, self).extra_repr() + ', nbit={}'.format(self.nbit)
+
+# class int_conv2d(nn.Conv2d):
 #     def forward(self, input):
 #         w_mean = self.weight.mean()
 #         weight_c = self.weight - w_mean
 
-#         weight_q = int_quant_func(nbit=self.nbit, restrictRange=True)(weight_c)
+#         weight_q = int_quant_func(nbit=4, restrictRange=True)(weight_c)
         
-#         output = F.conv2d(input, weight_q*self.mask_original, self.bias, self.stride, self.padding, self.dilation, self.groups)
-#         if not self.weight.size(2) == 1:
-#             print(f'Weight size: {list(weight_q.size())}')
-#             print(f'input size:: {list(input.size())}')
-#             print(f'output fm size:{list(output.size())}')
-#             print("========================")
-#         # else:
-#         #     print("========================")
-#         #     print('Residual!')
+#         output = F.conv2d(input, weight_q, self.bias, self.stride, self.padding, self.dilation, self.groups)
+#         out_temp = F.conv2d(input, weight_q)
+
+#         # if not self.weight.size(2) == 1:
 #         #     print(f'Weight size: {list(weight_q.size())}')
-#         #     print(f'input size:: {list(input.size())}')
+#         #     print(f'input size: {list(input.size())}')
 #         #     print(f'output fm size:{list(output.size())}')
+#         #     print(f'raw output size: {list(out_temp.size())}')
 #         #     print("========================")
 #         return output
-    
-#     def extra_repr(self):
-#         return super(int_conv2d, self).extra_repr() + ', nbit={}'.format(self.nbit)
-
-class int_conv2d(nn.Conv2d):
-    def forward(self, input):
-        w_mean = self.weight.mean()
-        weight_c = self.weight - w_mean
-
-        weight_q = int_quant_func(nbit=4, restrictRange=True)(weight_c)
-        
-        output = F.conv2d(input, weight_q, self.bias, self.stride, self.padding, self.dilation, self.groups)
-        out_temp = F.conv2d(input, weight_q)
-
-        # if not self.weight.size(2) == 1:
-        #     print(f'Weight size: {list(weight_q.size())}')
-        #     print(f'input size: {list(input.size())}')
-        #     print(f'output fm size:{list(output.size())}')
-        #     print(f'raw output size: {list(out_temp.size())}')
-        #     print("========================")
-        return output
 
 class int_linear(nn.Linear):
     def __init__(self, in_channels, out_channels, bias=True, nbit=8):

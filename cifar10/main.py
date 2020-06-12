@@ -18,6 +18,7 @@ from utils_.utils import AverageMeter, RecorderMeter, time_string, convert_secs2
 from utils_.reorganize_param import reorganize_param
 from utils_.model_summary import summary
 from torchsummary import summary
+from models.quant import odd_symm_quant
 import csv
 
 # from torch.utils.tensorboard import SummaryWriter
@@ -260,20 +261,6 @@ def main():
     # Init model, criterion, and optimizer
     net = models.__dict__[args.arch](num_classes)
     print_log("=> network :\n {}".format(net), log)
-    # inputsize = torch.tensor((3, 224, 224))
-    # summary(net, inputsize)
-    # net.load_state_dict(torch.load('save/mobilenetv2_1.pth'))
-    #set first and last layer grad to false
-    # if args.fine_tune:
-    #     print('no grad for first and last layer')
-    #     if args.dataset == 'imagenet':
-    #         net.conv1.weight.requires_grad = False
-    #         net.fc.weight.requires_grad = False
-    #     if args.dataset == 'cifar10':
-    #         net.conv_1_3x3.weight.requires_grad = False
-    #         net.classifier.weight.requires_grad = False
-    # inputsize = torch.tensor((1, 28, 28))
-    # summary(net, inputsize)
     if args.use_cuda:
         if args.ngpu > 1:
             # net = torch.nn.DataParallel(net, device_ids=[1,2])
@@ -359,24 +346,17 @@ def main():
         validate(test_loader, net, criterion, log)
         return
 
-    if args.gradual_prune:
-        m=Mask(net)
-        m.init_length()
-        comp_rate = 1 - args.ratio
-        print("-"*10+"one epoch begin"+"-"*10)
-        print("the compression rate now is %f" % comp_rate)
-
-
     # Main loop
     start_time = time.time()
     epoch_time = AverageMeter()
 
     w_zero_idx = []
     thre_mean = []
-   # group_ch = 16   # group number
     spar = []
     penal = []
     
+    alpha_w_list = []
+    sparsity = []
     
     for epoch in range(args.start_epoch, args.epochs):
         current_learning_rate, current_momentum = adjust_learning_rate(
@@ -387,10 +367,14 @@ def main():
         need_time = '[Need: {:02d}:{:02d}:{:02d}]'.format(
             need_hour, need_mins, need_secs)
 
+        # compute the group sparsity
+        grp_sparse = compute_sparsity(net)
+        sparsity.append(grp_sparse)
+
         print_log(
-            '\n==>>{:s} [Epoch={:03d}/{:03d}] {:s} [LR={:6.5f}][M={:1.2f}]'.format(time_string(), epoch, args.epochs,
+            '\n==>>{:s} [Epoch={:03d}/{:03d}] {:s} [LR={:6.5f}][M={:1.2f}] | [GS={:6.5f}]'.format(time_string(), epoch, args.epochs,
                                                                                    need_time, current_learning_rate,
-                                                                                   current_momentum)
+                                                                                   current_momentum, grp_sparse)
             + ' [Best : Accuracy={:.2f}, Error={:.2f}]'.format(recorder.max_accuracy(False),
                                                                100 - recorder.max_accuracy(False)), log)
 
@@ -408,6 +392,10 @@ def main():
         # evaluate on validation set
         val_acc, val_los = validate(test_loader, net, criterion, log)
 
+        # get the alpha value layer by layer
+        alpha_w = get_alpha(net)
+        alpha_w_list.append(alpha_w)
+            
         if args.gradual_prune and epoch % 10 == 0:
             print(epoch)
             w_zero_layer = []
@@ -417,7 +405,6 @@ def main():
                     idx = n.get_weight_idx()
                     w_zero_layer.append(idx)
             w_zero_idx.append(w_zero_layer)
-
         
             val_acc, val_los = validate(test_loader, net, criterion, log)
 
@@ -443,25 +430,60 @@ def main():
         start_time = time.time()
         recorder.plot_curve(os.path.join(args.save_path, 'curve.png'))
 
-        # save addition accuracy log for plotting
-        # accuracy_logger(base_dir=args.save_path,
-        #                epoch=epoch,
-        #                train_accuracy=train_acc,
-        #                test_accuracy=val_acc)
-        # sparisty_logger(base_dir=args.save_path,
-        #                epoch=epoch,
-        #                data=spar_epoch)
-        # thre_logger(base_dir=args.save_path,
-        #                epoch=epoch,
-        #                data=thre_epoch)
     log.close()
 
     filename = os.path.join(args.save_path, 'w_zero_idx')
     np.save(filename, w_zero_idx)
 
+    filename = os.path.join(args.save_path, 'model_alpha_w.npy')
+    np.save(filename, np.array(alpha_w_list))
+
+    filename = os.path.join(args.save_path, 'model_sparsity.npy')
+    np.save(filename, np.array(sparsity))
+
+def compute_sparsity(model):
+    all_group = 0
+    all_nonsparse = 0
+    group_ch = args.group_ch
+    count = 0
+    for m in model.modules():
+        if isinstance(m, nn.Conv2d):
+            if not count in [0] and not m.weight.size(2)==1:
+                w_mean = m.weight.mean()
+                w_l = m.weight - w_mean
+
+                with torch.no_grad():
+                    w_l,_,_ = odd_symm_quant(w_l, nbit=4)
+                
+                kw = m.weight.size(2)
+                num_group = w_l.size(0) * w_l.size(1) // group_ch
+                w_l = w_l.view(w_l.size(0), w_l.size(1) // group_ch, group_ch, kw, kw)
+                w_l = w_l.contiguous().view((num_group, group_ch * kw * kw))
+                
+                grp_values = w_l.norm(p=2, dim=1)
+                non_zero_idx = torch.nonzero(grp_values) 
+                num_nonzeros = len(non_zero_idx)
+
+                all_group += num_group
+                all_nonsparse += num_nonzeros
+
+            count += 1
+    group_sparsity = 1 - all_nonsparse / all_group
+    return group_sparsity
+
+def get_alpha(model):
+    alpha = []
+    count = 0
+    for m in model.modules():
+        if isinstance(m, nn.Conv2d):
+            if not count in [0] and not m.weight.size(2)==1:
+                alpha.append(m.alpha_w)
+            count += 1
+    return alpha
+
+
 def glasso(var, dim=0):
     return var.pow(2).sum(dim=dim).pow(1/2).sum()
-
 
 def glasso_thre(var, dim=0):
     a = var.pow(2).sum(dim=dim).pow(1/2)
@@ -524,25 +546,10 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
         loss = criterion(output, target)
 
         # # ============ add group lasso ============#
-        #group size = [group_ch,3,3]
-
         if args.swp:
             lamda = torch.tensor(args.lamda).cuda()
             reg_g1 = torch.tensor(0.).cuda()
             group_ch = args.group_ch
-            # == channel-wise defined 
-            # for m in model.modules():
-            #     if isinstance(m, nn.Conv2d):
-            #         w_l = m.weight
-            #         w_l = w_l.view(w_l.size(0), -1)
-            #         reg_g1 += glasso_thre(w_l, 1)
-            #     if isinstance(m, nn.Linear):
-            #         w_f = m.weight
-            #         reg_g2 += glasso_thre(w_f, 0)
-
-            # loss += lamda * (reg_g1+reg_g2) 
-
-            # == group-wise defined
             count = 0
             for m in model.modules():
                 if isinstance(m, nn.Conv2d):
@@ -554,7 +561,6 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
                         w_l = w_l.contiguous().view((num_group, group_ch * kw * kw))
                         reg_g1 += glasso_thre(w_l, 1)
 
-                        # reg_g1 += glasso_rank(w_l, 1)
                     count += 1
                 # if isinstance(m, nn.Linear):
                 #     w_f = m.weight
