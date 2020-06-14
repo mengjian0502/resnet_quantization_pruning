@@ -309,9 +309,12 @@ class int_linear(nn.Linear):
         weight_c = self.weight
 
         # print(f'Linear layer | Input shape: {list(input.size())} | Weight shape: {list(weight_c.size())}')
-        weight_q = int_quant_func(nbit=self.nbit)(weight_c)
-
-        output = F.linear(input, weight_q, self.bias)
+        # weight_q = int_quant_func(nbit=self.nbit)(weight_c)
+        if self.nbit == 2:
+            alpha_w = get_scale_2bit(self.weight)
+        
+            weight_q = sawb_w2_Func(alpha=alpha_w)(self.weight)
+            output = F.linear(input, weight_q, self.bias)
 
         # print(f'Weight size: {list(weight_q.size())}')
         # print(f'input size:: {list(input.size())}')
@@ -336,11 +339,7 @@ class sawb_tern_Conv2d(nn.Conv2d):
 class sawb_w2_Conv2d(nn.Conv2d):
 
     def forward(self, input):
-        z_typical = {'4bit': [0.077, 1.013], '8bit':[0.027, 1.114]}
-
-        # alpha_w = get_scale_2bit(self.weight)
-        # alpha_w = get_scale_reg2(self.weight)
-        alpha_w = get_scale(input, z_typical['4bit']).item()
+        alpha_w = get_scale_2bit(self.weight)
 
         weight = sawb_w2_Func(alpha=alpha_w)(self.weight)
         output = F.conv2d(input, weight, self.bias, self.stride, self.padding, self.dilation, self.groups)

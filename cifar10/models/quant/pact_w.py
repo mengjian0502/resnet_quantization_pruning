@@ -18,8 +18,8 @@ class PACT_W(nn.Module):
 
         w_l = w_l - w_mean                              # center the weights
 
-        w_l = self.beta * torch.tanh(10*w_l)       
-        # w_l = w_l.clamp(-self.beta.item(), self.beta.item())       
+        # w_l = self.beta * torch.tanh(w_l)       
+        w_l = w_l.clamp(-self.beta.item(), self.beta.item())       
 
         scale, zero_point = symmetric_linear_quantization_params(self.nbits, self.beta, restrict_qrange=True)
         w_l = STEQuantizer_weight.apply(w_l, scale, zero_point, True, False, self.nbits, True)

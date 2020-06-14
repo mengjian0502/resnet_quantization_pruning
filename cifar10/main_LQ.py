@@ -478,7 +478,7 @@ def get_alpha(model):
     for m in model.modules():
         if isinstance(m, nn.Conv2d):
             if not count in [0] and not m.weight.size(2)==1:
-                alpha.append(m.alpha_w)
+                alpha.append(m.beta)
             count += 1
     return alpha
 
@@ -585,9 +585,9 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
 
             qcoef_ = []
             for name, param in model.named_parameters():
-                if 'qcoef' in name:
-                    qcoef_.append(param.detach().cpu().numpy())
-                    reg_beta += param.norm(p=2) ** 2
+                if 'beta' in name:
+                    qcoef_.append(param.item())
+                    reg_beta += param.item() ** 2
             loss += b_lambda * (reg_beta)
         
         # # ============ add group lasso ============#
@@ -622,7 +622,7 @@ def train(train_loader, model, criterion, optimizer, epoch, log):
         log)
 
     if args.w_clp:
-        print(f"qcoef: {qcoef_}")
+        print_log(f"qcoef: {qcoef_}", log)
     if args.clp:
         return top1.avg, losses.avg, alpha
     else:

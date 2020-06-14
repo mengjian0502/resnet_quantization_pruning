@@ -1,1 +1,1 @@
-# Quantization + Pruning (Yang, AAAI2020)
+# Quantization + Structured Pruning

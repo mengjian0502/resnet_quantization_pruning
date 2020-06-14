@@ -33,7 +33,7 @@ for i in $(seq ${lb} ${diff} ${ub})
 do
     $PYTHON -W ignore main_LQ.py --dataset ${dataset} \
         --data_path ./dataset/   \
-        --arch ${model} --save_path ./save/resnet20/learnable_quant/ch${group_ch}/decay0.0005_lambda${i}_w4_a4_swpTrue_resumeTrue_qsc_symm_from_quant_tanh \
+        --arch ${model} --save_path ./save/resnet20/learnable_quant/ch${group_ch}/decay0.0005_lambda${i}_w4_a4_swpTrue_resumeTrue_qsc_symm_from_quant_pact_w \
         --epochs ${epochs}  --learning_rate  0.01 \
         --optimizer ${optimizer} \
         --schedule 80 120 160   --gammas 0.1 0.1 0.5 \

@@ -393,8 +393,8 @@ def main():
         val_acc, val_los = validate(test_loader, net, criterion, log)
 
         # get the alpha value layer by layer
-        alpha_w = get_alpha(net)
-        alpha_w_list.append(alpha_w)
+        # alpha_w = get_alpha(net)
+        # alpha_w_list.append(alpha_w)
             
         if args.gradual_prune and epoch % 10 == 0:
             print(epoch)

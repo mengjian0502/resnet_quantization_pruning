@@ -24,7 +24,7 @@ eval_model="./save/resnet20/full_precsion/decay0.0002_w32_a32_fullprecision/mode
 
 $PYTHON -W ignore main.py --dataset ${dataset} \
     --data_path ./dataset/   \
-    --arch ${model} --save_path ./save/resnet20/w4_a4_quant_baseline_full_quant/decay${wd}_w4_a4_fullprecision_eval \
+    --arch ${model} --save_path ./save/resnet20/w2_a2_quant_baseline_full_quant/decay${wd}_w2_a2_fullprecision \
     --epochs ${epochs}  --learning_rate  0.1 \
     --optimizer ${optimizer} \
     --schedule 60 120   --gammas 0.1 0.1 \
