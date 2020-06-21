@@ -21,6 +21,8 @@ from models.quant import int_conv2d, int_quant_func, Qconv2d, QLinear
 from torchsummary import summary
 import csv
 
+from bn_fusion import fuse_bn_recursively
+
 # from torch.utils.tensorboard import SummaryWriter
 from tensorboardX import SummaryWriter
 import models
@@ -65,6 +67,10 @@ parser.add_argument('--workers', type=int, default=4,
                     help='number of data loading workers (default: 2)')
 # random seed
 parser.add_argument('--manualSeed', type=int, default=5000, help='manual seed')
+
+# BN fusion
+parser.add_argument('--bn_fuse', action='store_true',
+                    help='fuse the batchnorm layer with the convolutional layer')
 
 # Inference with ADC
 parser.add_argument('--adc_infer', action='store_true', help='True for adc inference')
@@ -217,6 +223,11 @@ def main():
     net = models.__dict__[args.arch](num_classes, col_size=args.col_size, group_size=args.group_size, ADCprecision=args.ADCprecision, cellBit=args.cell_bit)
     print_log("=> network :\n {}".format(net), log)
 
+    if args.bn_fuse:
+        print('BN Fusion!')
+        net = fuse_bn_recursively(net)
+        print_log("=> network :\n {}".format(net), log)
+
     if args.use_cuda:
         if args.ngpu > 1:
             net = torch.nn.DataParallel(net)
@@ -331,8 +342,8 @@ def validate(val_loader, model, criterion, log):
             top5.update(prec5.item(), input.size(0))
             
             # print(i)
-            if prec1==0:
-                break
+            # if prec1==0:
+            #     break
         print_log(
             '  **Test** Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f} Error@1 {error1:.3f}'.format(top1=top1, top5=top5,
                                                                                                  error1=100 - top1.avg),log)

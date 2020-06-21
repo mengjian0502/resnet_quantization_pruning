@@ -20,20 +20,20 @@ batch_size=128
 optimizer=SGD
 group_ch=16
 
-ub=0.001
-lb=0.001
+ub=0.002
+lb=0.002
 diff=0.001
 
 # add more labels as additional info into the saving path
 label_info=
 
-pretrained_model="./save/resnet20/w4_a4_quant_baseline/decay0.0005_w4_a4_fullprecision/model_best.pth.tar"
+pretrained_model="./save/resnet20/w4_a4_quant_baseline_gdrq/decay0.0005_w4_a4_baseline/model_best.pth.tar"
 
 for i in $(seq ${lb} ${diff} ${ub})
 do
     $PYTHON -W ignore main.py --dataset ${dataset} \
         --data_path ./dataset/   \
-        --arch ${model} --save_path ./save/resnet20/learnable_quant/ch${group_ch}/decay0.0005_lambda${i}_w4_a4_swpTrue_resumeTrue_qsc_symm_from_quant_pactw \
+        --arch ${model} --save_path ./save/resnet20/grdq/ch${group_ch}/decay0.0005_lambda${i}_w4_a4_swpTrue_resumeTrue_qsc_symm_k2.0 \
         --epochs ${epochs}  --learning_rate  0.01 \
         --optimizer ${optimizer} \
         --schedule 80 120 160   --gammas 0.1 0.1 0.5 \
@@ -43,8 +43,6 @@ do
         --resume ${pretrained_model} \
         --clp \
         --a_lambda 0.01 \
-        --w_clp \
-        --b_lambda 0.001 \
         --fine_tune \
         --swp \
 	    --group_ch ${group_ch}

@@ -21,6 +21,9 @@ from torchsummary import summary
 from models.quant import odd_symm_quant
 import csv
 
+# batchnorm fusion
+from bn_fusion import fuse_bn_recursively
+
 # from torch.utils.tensorboard import SummaryWriter
 from tensorboardX import SummaryWriter
 import models
@@ -74,6 +77,10 @@ parser.add_argument('--fine_tune', dest='fine_tune', action='store_true',
                     help='fine tuning from the pre-trained model, force the start epoch be zero')
 parser.add_argument('--model_only', dest='model_only', action='store_true',
                     help='only save the model without external utils_')
+
+# BN fusion
+parser.add_argument('--bn_fuse', action='store_true',
+                    help='fuse the batchnorm layer with the convolutional layer')
 
 # Acceleration
 parser.add_argument('--ngpu', type=int, default=1, help='0 = CPU.')
@@ -261,13 +268,18 @@ def main():
     # Init model, criterion, and optimizer
     net = models.__dict__[args.arch](num_classes)
     print_log("=> network :\n {}".format(net), log)
+
+    if args.bn_fuse:
+        print('BN Fusion!')
+        net = fuse_bn_recursively(net)
+        print_log("=> network :\n {}".format(net), log)
+        
     if args.use_cuda:
         if args.ngpu > 1:
             # net = torch.nn.DataParallel(net, device_ids=[1,2])
             net = torch.nn.DataParallel(net)
 
     # define loss function (criterion) and optimizer
-
     criterion = torch.nn.CrossEntropyLoss()
 
     if args.optimizer == "SGD":
@@ -357,6 +369,7 @@ def main():
     
     alpha_w_list = []
     sparsity = []
+    overall_sparsity = []
     
     for epoch in range(args.start_epoch, args.epochs):
         current_learning_rate, current_momentum = adjust_learning_rate(
@@ -368,13 +381,14 @@ def main():
             need_hour, need_mins, need_secs)
 
         # compute the group sparsity
-        grp_sparse = compute_sparsity(net)
+        grp_sparse, overall_sparse = compute_sparsity(net)
         sparsity.append(grp_sparse)
+        overall_sparsity.append(overall_sparse)
 
         print_log(
-            '\n==>>{:s} [Epoch={:03d}/{:03d}] {:s} [LR={:6.5f}][M={:1.2f}] | [GS={:6.5f}]'.format(time_string(), epoch, args.epochs,
+            '\n==>>{:s} [Epoch={:03d}/{:03d}] {:s} [LR={:6.5f}][M={:1.2f}] | [GS={:6.5f}] | [OS={:6.5f}] '.format(time_string(), epoch, args.epochs,
                                                                                    need_time, current_learning_rate,
-                                                                                   current_momentum, grp_sparse)
+                                                                                   current_momentum, grp_sparse, overall_sparse)
             + ' [Best : Accuracy={:.2f}, Error={:.2f}]'.format(recorder.max_accuracy(False),
                                                                100 - recorder.max_accuracy(False)), log)
 
@@ -441,25 +455,37 @@ def main():
     filename = os.path.join(args.save_path, 'model_sparsity.npy')
     np.save(filename, np.array(sparsity))
 
+    filename = os.path.join(args.save_path, 'model_overall_sparsity.npy')
+    np.save(filename, np.array(overall_sparsity))
+    
 def compute_sparsity(model):
     all_group = 0
     all_nonsparse = 0
     group_ch = args.group_ch
     count = 0
+    all_num = 0.0
+    count_num_one = 0.0
     for m in model.modules():
         if isinstance(m, nn.Conv2d):
             if not count in [0] and not m.weight.size(2)==1:
                 w_mean = m.weight.mean()
-                w_l = m.weight - w_mean
+                w_l = m.weight
 
                 with torch.no_grad():
                     w_l,_,_ = odd_symm_quant(w_l, nbit=4)
                 
                 kw = m.weight.size(2)
+                
+                count_num_layer = w_l.size(0) * w_l.size(1) * kw * kw
+                all_num += count_num_layer
+                count_one_layer = len(torch.nonzero(w_l.view(-1)))
+                count_num_one += count_one_layer
+
                 num_group = w_l.size(0) * w_l.size(1) // group_ch
                 w_l = w_l.view(w_l.size(0), w_l.size(1) // group_ch, group_ch, kw, kw)
                 w_l = w_l.contiguous().view((num_group, group_ch * kw * kw))
-                
+        
+
                 grp_values = w_l.norm(p=2, dim=1)
                 non_zero_idx = torch.nonzero(grp_values) 
                 num_nonzeros = len(non_zero_idx)
@@ -468,8 +494,9 @@ def compute_sparsity(model):
                 all_nonsparse += num_nonzeros
 
             count += 1
+    overall_sparsity = 1 - count_num_one / all_num
     group_sparsity = 1 - all_nonsparse / all_group
-    return group_sparsity
+    return group_sparsity, overall_sparsity
 
 def get_alpha(model):
     alpha = []

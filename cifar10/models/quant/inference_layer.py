@@ -107,12 +107,12 @@ class Qconv2d(nn.Conv2d):
         # print(f'Weight size: {list(weight_c.size())}')
         # print(f'Output size: {list(output.size())}')
         # print(f'===================Layer=======================')
-        plt.figure(figsize=(8,8), dpi=300)
-        sns.distplot(output.cpu().numpy().flatten(), label='NeuroSim output')
-        sns.distplot(output_original.cpu().numpy().flatten(), label='Original output')
-        plt.title(f'ADC precision = {self.ADCprecision}')
-        plt.legend(loc='best')
-        plt.savefig(f'./figs/layer{self.layer_idx}_distribution.png')
+        # plt.figure(figsize=(8,8), dpi=300)
+        # sns.distplot(output.cpu().numpy().flatten(), label='NeuroSim output')
+        # sns.distplot(output_original.cpu().numpy().flatten(), label='Original output')
+        # plt.title(f'ADC precision = {self.ADCprecision}')
+        # plt.legend(loc='best')
+        # plt.savefig(f'./figs/layer{self.layer_idx}_distribution.png')
         return output         
 
 class QLinear(nn.Linear):

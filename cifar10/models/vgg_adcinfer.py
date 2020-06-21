@@ -117,7 +117,7 @@ class VGG_adc_quant(nn.Module):
             if isinstance(m, int_conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
                 m.weight.data.normal_(0, math.sqrt(2. / n))
-                m.bias.data.zero_()
+                # m.bias.data.zero_()
 
     def forward(self, x):
         x = self.features(x)

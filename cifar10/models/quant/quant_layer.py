@@ -11,9 +11,10 @@ from .quantizer import *
 
 
 def odd_symm_quant(input, nbit, dequantize=True, posQ=False):
-    z_typical = {'4bit': [0.077, 1.013], '8bit':[0.027, 1.114]}
+    # z_typical = {'4bit': [0.077, 1.013], '8bit':[0.027, 1.114]}
 
-    alpha_w = get_scale(input, z_typical[f'{nbit}bit']).item()
+    # alpha_w = get_scale(input, z_typical[f'{nbit}bit']).item()
+    alpha_w = 2 * input.abs().mean()
     output = input.clamp(-alpha_w, alpha_w)
 
     if posQ:
@@ -230,21 +231,22 @@ class sawb_w2_Func(torch.autograd.Function):
         return grad_input
 
 class int_quant_func(torch.autograd.Function):
-    def __init__(self, nbit, restrictRange=True):
+    def __init__(self, nbit, alpha_w, restrictRange=True):
         super(int_quant_func, self).__init__()
         self.nbit = nbit
         self.restrictRange = restrictRange
-    
+        self.alpha_w = alpha_w
+
     def forward(self, input):
         self.save_for_backward(input)
 
-        z_typical = {'4bit': [0.077, 1.013], '8bit':[0.027, 1.114]}                 # c1, c2 from the typical distribution (4bit)
-        z_net_4bit = {'resnet20': [0.107, 0.881]}                                   # c1, c2 from the specifical models
+        # z_typical = {'4bit': [0.077, 1.013], '8bit':[0.027, 1.114]}                 # c1, c2 from the typical distribution (4bit)
+        # z_net_4bit = {'resnet20': [0.107, 0.881]}                                   # c1, c2 from the specifical models
 
-        alpha_w = get_scale(input, z_typical['4bit']).item()
-        output = input.clamp(-alpha_w, alpha_w)
+        # alpha_w = get_scale(input, z_typical['4bit']).item()
+        output = input.clamp(-self.alpha_w.item(), self.alpha_w.item())
 
-        scale, zero_point = symmetric_linear_quantization_params(self.nbit, abs(alpha_w), restrict_qrange=self.restrictRange)
+        scale, zero_point = symmetric_linear_quantization_params(self.nbit, self.alpha_w, restrict_qrange=self.restrictRange)
         output = STEQuantizer_weight.apply(output, scale, zero_point, True, False, self.nbit, self.restrictRange)
 
         return output
@@ -263,41 +265,19 @@ class int_conv2d(nn.Conv2d):
                 stride=stride, padding=padding, dilation=dilation, groups=groups,
                 bias=bias)
         self.nbit = nbit
-        self.mask_original = torch.ones_like(self.weight).cuda()
 
     def forward(self, input):
-        w_mean = self.weight.mean()
-        weight_c = self.weight - w_mean
+        # w_mean = self.weight.mean()
+        weight_c = self.weight.clone()
         
-        z_typical = {'4bit': [0.077, 1.013], '8bit':[0.027, 1.114]}                 # c1, c2 from the typical distribution (4bit)
-        alpha_w = get_scale(weight_c, z_typical['4bit']).item()
-        self.alpha_w = alpha_w
-
-        weight_q = int_quant_func(nbit=self.nbit, restrictRange=True)(weight_c)
-
-        output = F.conv2d(input, weight_q*self.mask_original, self.bias, self.stride, self.padding, self.dilation, self.groups)
+        self.alpha_w = 2 * self.weight.abs().mean()
+        weight_q = int_quant_func(nbit=self.nbit, alpha_w=self.alpha_w, restrictRange=True)(weight_c)
+        output = F.conv2d(input, weight_q, self.bias, self.stride, self.padding, self.dilation, self.groups)
         return output
     
     def extra_repr(self):
         return super(int_conv2d, self).extra_repr() + ', nbit={}'.format(self.nbit)
 
-# class int_conv2d(nn.Conv2d):
-#     def forward(self, input):
-#         w_mean = self.weight.mean()
-#         weight_c = self.weight - w_mean
-
-#         weight_q = int_quant_func(nbit=4, restrictRange=True)(weight_c)
-        
-#         output = F.conv2d(input, weight_q, self.bias, self.stride, self.padding, self.dilation, self.groups)
-#         out_temp = F.conv2d(input, weight_q)
-
-#         # if not self.weight.size(2) == 1:
-#         #     print(f'Weight size: {list(weight_q.size())}')
-#         #     print(f'input size: {list(input.size())}')
-#         #     print(f'output fm size:{list(output.size())}')
-#         #     print(f'raw output size: {list(out_temp.size())}')
-#         #     print("========================")
-#         return output
 
 class int_linear(nn.Linear):
     def __init__(self, in_channels, out_channels, bias=True, nbit=8):
@@ -306,20 +286,17 @@ class int_linear(nn.Linear):
     
     def forward(self, input):
         w_mean = self.weight.mean()
-        weight_c = self.weight
+        weight_c = self.weight.clone()
 
-        # print(f'Linear layer | Input shape: {list(input.size())} | Weight shape: {list(weight_c.size())}')
-        # weight_q = int_quant_func(nbit=self.nbit)(weight_c)
+        self.alpha_w = 2 * self.weight.abs().mean()
+    
         if self.nbit == 2:
             alpha_w = get_scale_2bit(self.weight)
+            weight_q = sawb_w2_Func(alpha=self.alpha_w)(weight_c)
+        else:
+            weight_q = int_quant_func(nbit=self.nbit, alpha_w=self.alpha_w)(weight_c)
         
-            weight_q = sawb_w2_Func(alpha=alpha_w)(self.weight)
-            output = F.linear(input, weight_q, self.bias)
-
-        # print(f'Weight size: {list(weight_q.size())}')
-        # print(f'input size:: {list(input.size())}')
-        # print(f'output fm size:{list(output.size())}')
-        # print("========================")
+        output = F.linear(input, weight_q, self.bias)
         return output
 
     def extra_repr(self):

@@ -35,6 +35,7 @@ def make_layers_quant(cfg, batch_norm=False):
             layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
         else:
             conv2d = int_conv2d(in_channels, v, kernel_size=3, padding=1)
+            # conv2d = nn.Conv2d(in_channels, v, kernel_size=3, padding=1)
             if batch_norm:
                 layers += [conv2d, nn.BatchNorm2d(v), ClippedReLU(num_bits=4, alpha=10, inplace=True)]
             else:
@@ -92,8 +93,10 @@ class VGG_quant(nn.Module):
         if depth == 7:
             self.classifier = nn.Sequential(
                 int_linear(8192, 1024),
+                # nn.Linear(8192, 1024),
                 ClippedReLU(num_bits=4, alpha=10, inplace=True),
                 int_linear(1024, num_classes),
+                # nn.Linear(1024, num_classes),
             )
         else:
             self.classifier = nn.Sequential(
@@ -110,7 +113,7 @@ class VGG_quant(nn.Module):
             if isinstance(m, int_conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
                 m.weight.data.normal_(0, math.sqrt(2. / n))
-                m.bias.data.zero_()
+                # m.bias.data.zero_()
 
     def forward(self, x):
         x = self.features(x)
